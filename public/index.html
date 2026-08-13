@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="icon" href="data:," />
+<title>DESYtrack — Lab Sample Tracking</title>
+<style>
+  :root{
+    --bg:#0f1720; --panel:#17212e; --panel2:#1e2b3a; --line:#2b3a4d;
+    --ink:#e7edf3; --muted:#9fb0c3; --accent:#4f9cf9; --accent2:#2bb673;
+    --warn:#e0a83e; --danger:#e5695f; --radius:10px;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+       background:var(--bg);color:var(--ink)}
+  a{color:var(--accent);text-decoration:none}
+  button{font:inherit;cursor:pointer;border:none;border-radius:8px;padding:8px 14px;background:var(--accent);color:#fff}
+  button.ghost{background:transparent;border:1px solid var(--line);color:var(--ink)}
+  button.sm{padding:5px 10px;font-size:13px}
+  input,select,textarea{font:inherit;background:var(--panel2);border:1px solid var(--line);color:var(--ink);
+       border-radius:8px;padding:8px 10px;width:100%}
+  label{display:block;font-size:12px;color:var(--muted);margin:10px 0 4px}
+  .row{display:flex;gap:12px;flex-wrap:wrap}
+  .row>*{flex:1;min-width:0}
+  header{display:flex;align-items:center;justify-content:space-between;padding:12px 20px;
+       background:var(--panel);border-bottom:1px solid var(--line)}
+  header .brand{font-weight:700;font-size:16px;letter-spacing:.3px}
+  header .brand span{color:var(--accent)}
+  .who{font-size:13px;color:var(--muted)}
+  .badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600;
+       background:var(--panel2);border:1px solid var(--line);color:var(--muted)}
+  main{max-width:1100px;margin:0 auto;padding:20px}
+  .tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px;margin-bottom:20px}
+  .tile{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:14px}
+  .tile .n{font-size:26px;font-weight:700}
+  .tile .l{font-size:12px;color:var(--muted)}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px;margin-bottom:16px}
+  table{width:100%;border-collapse:collapse}
+  th,td{text-align:left;padding:10px 8px;border-bottom:1px solid var(--line);font-size:13px}
+  th{color:var(--muted);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.4px}
+  tr.click{cursor:pointer}
+  tr.click:hover{background:var(--panel2)}
+  .status{padding:2px 10px;border-radius:20px;font-size:12px;font-weight:600;white-space:nowrap}
+  .s-received{background:#26333f;color:#cfe0f0}
+  .s-registered{background:#2a3550;color:#c8d4ff}
+  .s-in_testing{background:#3a3320;color:#f0d79a}
+  .s-on_hold{background:#3f2a2a;color:#f3c0bb}
+  .s-completed{background:#20362b;color:#a6e6c4}
+  .s-shared{background:#233a44;color:#a9e0ef}
+  .s-archived,.s-disposed{background:#2b2b2b;color:#bbb}
+  .timeline{list-style:none;padding:0;margin:0}
+  .timeline li{position:relative;padding:0 0 14px 20px;border-left:2px solid var(--line)}
+  .timeline li:last-child{border-left-color:transparent}
+  .timeline li::before{content:"";position:absolute;left:-6px;top:2px;width:10px;height:10px;border-radius:50%;background:var(--accent)}
+  .timeline .t{font-size:12px;color:var(--muted)}
+  .muted{color:var(--muted)}
+  .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:flex-start;justify-content:center;padding:40px 16px;overflow:auto;z-index:20}
+  .modal{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:20px;width:100%;max-width:640px}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px}
+  .toolbar input,.toolbar select{width:auto;flex:0 1 auto}
+  .err{color:var(--danger);font-size:13px;margin-top:8px}
+  .pill{font-size:11px;padding:1px 7px;border-radius:12px;border:1px solid var(--line);color:var(--muted)}
+  .login-wrap{max-width:360px;margin:8vh auto}
+  .hint{font-size:12px;color:var(--muted);margin-top:10px;line-height:1.7}
+  h2{font-size:18px;margin:0 0 4px}
+  h3{font-size:14px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin:18px 0 8px}
+  .flex-between{display:flex;justify-content:space-between;align-items:center;gap:10px}
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<!-- Bundled locally so QR works offline on the lab network -->
+<script src="vendor/qrcode.js"></script>
+<script src="vendor/jsQR.js"></script>
+<script>
+const API = '';
+let state = { token: null, user: null, statuses: [] };
+
+// ---- tiny helpers ----
+const $ = (sel, el=document) => el.querySelector(sel);
+const el = (html) => { const t=document.createElement('template'); t.innerHTML=html.trim(); return t.content.firstChild; };
+const esc = (s) => (s==null?'':String(s)).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function saveToken(t){ state.token=t; if(t) localStorage_shim.set(t); }
+// in-memory token store (artifacts can't use localStorage; standalone page can, but keep portable)
+const localStorage_shim = { _v:null, set(v){this._v=v;}, get(){return this._v;} };
+
+async function api(path, opts={}) {
+  const headers = { 'Content-Type':'application/json', ...(opts.headers||{}) };
+  if (state.token) headers.Authorization = 'Bearer '+state.token;
+  const res = await fetch(API+path, { ...opts, headers, body: opts.body?JSON.stringify(opts.body):undefined });
+  if (res.status === 401) { state.token=null; renderLogin(); throw new Error('unauthorized'); }
+  const data = await res.json().catch(()=>({}));
+  if (!res.ok) throw new Error(data.error || ('HTTP '+res.status));
+  return data;
+}
+const statusClass = (code) => 's-'+code;
+const statusLabel = (code) => (state.statuses.find(s=>s.code===code)||{}).label || code;
+
+// ------------------------------------------------------------------
+// LOGIN
+// ------------------------------------------------------------------
+function renderLogin() {
+  document.getElementById('app').innerHTML = '';
+  const wrap = el(`<div class="login-wrap card">
+    <div class="brand" style="font-size:20px;font-weight:700;margin-bottom:4px">DESY<span style="color:var(--accent)">track</span></div>
+    <div class="muted" style="margin-bottom:16px">Lab &amp; material sample tracking</div>
+    <label>Email</label><input id="email" value="admin@lab.test" />
+    <label>Password</label><input id="password" type="password" value="admin123" />
+    <div style="margin-top:16px"><button id="go" style="width:100%">Sign in</button></div>
+    <div class="err" id="loginErr"></div>
+    <div class="hint">Demo accounts:<br>
+      admin@lab.test / admin123 (admin)<br>
+      tech@lab.test / member123 (member)<br>
+      partner@acme.test / partner123 (partner — scoped view)</div>
+  </div>`);
+  document.getElementById('app').appendChild(wrap);
+  const doLogin = async () => {
+    $('#loginErr').textContent='';
+    try {
+      const r = await api('/api/login', { method:'POST', body:{ email:$('#email').value, password:$('#password').value }});
+      state.token = r.token; state.user = r.user;
+      state.statuses = await api('/api/statuses');
+      renderApp();
+    } catch(e){ $('#loginErr').textContent = e.message; }
+  };
+  $('#go').onclick = doLogin;
+  $('#password').onkeydown = (e)=>{ if(e.key==='Enter') doLogin(); };
+}
+
+// ------------------------------------------------------------------
+// APP SHELL
+// ------------------------------------------------------------------
+function renderApp() {
+  const u = state.user;
+  document.getElementById('app').innerHTML = '';
+  const header = el(`<header>
+    <div class="brand">DESY<span>track</span></div>
+    <div class="who">${esc(u.name)} · <span class="badge">${esc(u.role)}${u.organization?(' · '+esc(u.organization)):''}</span>
+      <button class="ghost sm" id="logout" style="margin-left:10px">Sign out</button></div>
+  </header>`);
+  const main = el(`<main><div id="content"></div></main>`);
+  document.getElementById('app').append(header, main);
+  $('#logout').onclick = ()=>{ state.token=null; state.user=null; renderLogin(); };
+  renderList();
+  // Deep link: /?code=SMP-... (e.g. a QR that encodes a full URL) opens that sample.
+  try{
+    const params = new URLSearchParams(location.search);
+    const deep = extractCode(params.get('code') || location.hash.replace(/^#\/?/, ''));
+    if(deep) api('/api/resolve?code=' + encodeURIComponent(deep)).then(r=>renderDetail(r.id)).catch(()=>{});
+  }catch(e){}
+}
+
+// ------------------------------------------------------------------
+// SAMPLE LIST + DASHBOARD
+// ------------------------------------------------------------------
+async function renderList() {
+  const c = $('#content');
+  const internal = state.user.role!=='partner';
+  c.innerHTML = '<div class="muted">Loading…</div>';
+  const [stats, samples] = await Promise.all([ api('/api/stats'), api('/api/samples') ]);
+
+  const tiles = stats.map(s=>`<div class="tile"><div class="n">${s.n}</div><div class="l">${esc(s.label)}</div></div>`).join('')
+      || '<div class="muted">No samples yet.</div>';
+
+  c.innerHTML = `
+    <div class="tiles">${tiles}</div>
+    <div class="card">
+      <div class="toolbar">
+        <input id="q" placeholder="Search name, code, origin…" style="min-width:220px"/>
+        <select id="fstatus"><option value="">All statuses</option>
+          ${state.statuses.map(s=>`<option value="${s.code}">${esc(s.label)}</option>`).join('')}</select>
+        ${internal?'<button id="new">+ New sample</button>':''}
+        <button class="ghost" id="scan">⛶ Scan QR</button>
+        <div style="flex:1"></div>
+        ${internal?'<button class="ghost" id="mgUsers">Users</button>':''}
+      </div>
+      <table><thead><tr><th>Code</th><th>Name</th><th>Material</th><th>Status</th><th>Custodian</th><th>Updated</th></tr></thead>
+      <tbody id="rows"></tbody></table>
+    </div>`;
+
+  const draw = (list) => {
+    $('#rows').innerHTML = list.map(s=>`<tr class="click" data-id="${s.id}">
+      <td><span class="pill">${esc(s.sample_code)}</span></td>
+      <td>${esc(s.name)}</td>
+      <td>${esc(s.material_type||'—')}</td>
+      <td><span class="status ${statusClass(s.status)}">${esc(s.status_label)}</span></td>
+      <td>${esc(s.custodian_name||'—')}</td>
+      <td class="muted">${esc((s.updated_at||'').slice(0,10))}</td></tr>`).join('')
+      || '<tr><td colspan="6" class="muted">No matching samples.</td></tr>';
+    document.querySelectorAll('#rows tr.click').forEach(tr=>tr.onclick=()=>renderDetail(tr.dataset.id));
+  };
+  draw(samples);
+
+  const refilter = async ()=>{
+    const p = new URLSearchParams();
+    if($('#q').value) p.set('q',$('#q').value);
+    if($('#fstatus').value) p.set('status',$('#fstatus').value);
+    draw(await api('/api/samples?'+p.toString()));
+  };
+  $('#q').oninput = refilter; $('#fstatus').onchange = refilter;
+  if($('#new')) $('#new').onclick = openNewSample;
+  if($('#mgUsers')) $('#mgUsers').onclick = openUsers;
+  if($('#scan')) $('#scan').onclick = openScan;
+}
+
+// ------------------------------------------------------------------
+// SAMPLE DETAIL
+// ------------------------------------------------------------------
+async function renderDetail(id) {
+  const c = $('#content');
+  c.innerHTML = '<div class="muted">Loading…</div>';
+  const d = await api('/api/samples/'+id);
+  const s = d.sample;
+  const internal = state.user.role!=='partner';
+  const nexts = await api('/api/statuses/'+s.status+'/next');
+
+  const field = (l,v)=>`<div><label>${l}</label><div>${esc(v||'—')}</div></div>`;
+  c.innerHTML = `
+    <div class="flex-between" style="margin-bottom:10px">
+      <button class="ghost sm" id="back">← All samples</button>
+      <span class="status ${statusClass(s.status)}">${esc(s.status_label)}</span>
+    </div>
+    <div class="card">
+      <div class="flex-between">
+        <div><h2>${esc(s.name)}</h2><div class="muted">${esc(s.sample_code)}</div></div>
+        ${internal?`<div><button class="sm ghost" id="edit">Edit</button></div>`:''}
+      </div>
+      <div class="grid2" style="margin-top:12px">
+        ${field('Material type', s.material_type)}
+        ${field('Batch / lot', s.batch_lot)}
+        ${field('Origin', s.origin)}
+        ${field('Quantity', (s.quantity!=null? s.quantity+' '+(s.unit||''):''))}
+        ${field('Storage location', s.storage_location)}
+        ${field('Hazard class', s.hazard_class)}
+        ${field('Custodian', s.custodian_name)}
+        ${field('Received', s.received_at)}
+      </div>
+      ${s.description?`<div style="margin-top:10px"><label>Description</label><div>${esc(s.description)}</div></div>`:''}
+      ${internal && nexts.length?`<div style="margin-top:14px" class="row">
+        <div style="flex:2"><label>Advance status to</label>
+          <select id="toStatus">${nexts.map(n=>`<option value="${n.code}">${esc(n.label)}</option>`).join('')}</select></div>
+        <div style="flex:3"><label>Note (optional)</label><input id="stNote" placeholder="Reason / detail"/></div>
+        <div style="flex:0 0 auto;align-self:flex-end"><button id="advance">Update status</button></div>
+      </div>`:''}
+    </div>
+
+    <div class="card">
+      <div class="flex-between"><h3 style="margin:0">Sample label (QR)</h3>
+        <button class="sm ghost" id="printQR">🖶 Print label</button></div>
+      <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+        <div id="qrBox" style="background:#fff;padding:8px;border-radius:8px;width:150px;height:150px"></div>
+        <div class="muted">Stick this on the physical sample. Anyone can then hit <b>Scan QR</b> and this record opens instantly — no typing.<br><span class="pill" style="margin-top:6px;display:inline-block">${esc(s.sample_code)}</span></div>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="card">
+        <div class="flex-between"><h3 style="margin:0">Tests / analyses</h3>${internal?'<button class="sm ghost" id="addTest">+ Add</button>':''}</div>
+        <table><tbody id="tests">${d.tests.map(t=>`<tr>
+          <td><b>${esc(t.test_type)}</b><div class="muted">${esc(t.method||'')}</div></td>
+          <td>${esc(t.result_value||'—')} ${esc(t.result_unit||'')}</td>
+          <td><span class="pill">${esc(t.outcome)}</span></td></tr>`).join('') || '<tr><td class="muted">No tests logged.</td></tr>'}</tbody></table>
+      </div>
+      <div class="card">
+        <h3 style="margin:0 0 8px">Chain of custody</h3>
+        <ul class="timeline">${d.events.map(e=>`<li>
+          <div><b>${esc(e.event_type.replace('_',' '))}</b>${e.to_value?` → ${esc(statusLabel(e.to_value)||e.to_value)}`:''}</div>
+          ${e.note?`<div class="muted">${esc(e.note)}</div>`:''}
+          <div class="t">${esc(e.actor)} · ${esc((e.created_at||'').slice(0,16))}</div></li>`).join('')}</ul>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3 style="margin:0 0 8px">Comments</h3>
+      <div id="comments">${d.comments.map(cm=>`<div style="padding:8px 0;border-bottom:1px solid var(--line)">
+        <div>${esc(cm.body)}</div>
+        <div class="t muted">${esc(cm.author)} · ${esc((cm.created_at||'').slice(0,16))} ${cm.visibility==='internal'?'<span class="pill">internal</span>':''}</div></div>`).join('') || '<div class="muted">No comments.</div>'}</div>
+      <div class="row" style="margin-top:10px">
+        <div style="flex:4"><input id="cbody" placeholder="Add a comment…"/></div>
+        ${internal?`<div style="flex:0 0 auto"><select id="cvis"><option value="shared">Shared</option><option value="internal">Internal only</option></select></div>`:''}
+        <div style="flex:0 0 auto"><button id="postC">Post</button></div>
+      </div>
+      ${internal?`<div style="margin-top:14px"><button class="ghost sm" id="mgAccess">Manage partner access</button></div>`:''}
+    </div>`;
+
+  $('#back').onclick = renderList;
+  if($('#edit')) $('#edit').onclick = ()=>openEditSample(s);
+  if($('#advance')) $('#advance').onclick = async ()=>{
+    await api('/api/samples/'+id+'/status',{method:'POST',body:{to:$('#toStatus').value,note:$('#stNote').value}});
+    renderDetail(id);
+  };
+  if($('#addTest')) $('#addTest').onclick = ()=>openAddTest(id);
+  $('#postC').onclick = async ()=>{
+    if(!$('#cbody').value) return;
+    await api('/api/samples/'+id+'/comments',{method:'POST',body:{body:$('#cbody').value, visibility: $('#cvis')?$('#cvis').value:'shared'}});
+    renderDetail(id);
+  };
+  if($('#mgAccess')) $('#mgAccess').onclick = ()=>openAccess(id);
+
+  // --- QR label for this sample (generated locally from the accession code) ---
+  const qr = qrcode(0, 'M');
+  qr.addData(s.sample_code);
+  qr.make();
+  if($('#qrBox')) $('#qrBox').innerHTML = qr.createSvgTag({ cellSize: 4, margin: 0, scalable: true });
+  if($('#printQR')) $('#printQR').onclick = () => {
+    const svg = qr.createSvgTag({ cellSize: 8, margin: 1 });
+    const w = window.open('', '_blank', 'width=380,height=460');
+    w.document.write(`<html><head><title>${esc(s.sample_code)}</title>
+      <style>body{font-family:sans-serif;text-align:center;margin:24px}
+      h2{font-size:18px;margin:12px 0 2px} .n{color:#444;font-size:13px}</style></head>
+      <body>${svg}<h2>${esc(s.sample_code)}</h2><div class="n">${esc(s.name)}</div>
+      <scr`+`ipt>window.onload=function(){window.print();}</scr`+`ipt></body></html>`);
+    w.document.close();
+  };
+}
+
+// ------------------------------------------------------------------
+// SCAN (camera + USB barcode scanner) → open sample by code
+// ------------------------------------------------------------------
+function extractCode(raw){
+  let code = (raw||'').trim();
+  if(/^https?:\/\//i.test(code)){
+    try{ const u = new URL(code); code = u.searchParams.get('code') || decodeURIComponent((u.pathname.split('/').filter(Boolean).pop())||''); }catch(e){}
+  }
+  return code.trim();
+}
+function openScan(){
+  const { bg } = modal(`<h2>Scan a sample</h2>
+    <div class="muted" style="margin-bottom:8px">Point the camera at a sample's QR label — or scan into the box with a USB barcode scanner, or just type a code and press Enter.</div>
+    <video id="scanVid" playsinline muted style="width:100%;max-height:300px;background:#000;border-radius:8px"></video>
+    <div id="scanMsg" class="muted" style="margin-top:6px"></div>
+    <label>Code (USB scanner or manual)</label>
+    <input id="scanInput" placeholder="e.g. SMP-2026-0001" autocomplete="off"/>
+    <div class="err" id="scanErr"></div>
+    <div style="margin-top:14px;text-align:right"><button class="ghost" id="scanClose">Close</button></div>`);
+  const video = $('#scanVid');
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  let stream = null, raf = null, busy = false, closed = false;
+
+  const stop = () => { closed = true; if(raf) cancelAnimationFrame(raf); if(stream) stream.getTracks().forEach(t=>t.stop()); };
+  const closeAll = () => { stop(); bg.remove(); };
+  bg.onclick = (e) => { if(e.target===bg) closeAll(); };
+  $('#scanClose').onclick = closeAll;
+
+  async function tryCode(raw){
+    const code = extractCode(raw);
+    if(!code || busy) return;
+    busy = true; $('#scanErr').textContent = '';
+    try{
+      const r = await api('/api/resolve?code=' + encodeURIComponent(code));
+      closeAll();
+      renderDetail(r.id);
+    }catch(err){
+      $('#scanErr').textContent = err.message;
+      $('#scanInput').value = '';
+      busy = false; // keep scanning / allow retry
+    }
+  }
+
+  // USB scanner types the code then sends Enter; manual entry works too.
+  const inp = $('#scanInput'); inp.focus();
+  inp.onkeydown = (e) => { if(e.key==='Enter') tryCode(inp.value); };
+
+  // Camera decode loop (works on localhost and on any https deployment)
+  if(navigator.mediaDevices && navigator.mediaDevices.getUserMedia){
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+      .then(s => { if(closed){ s.getTracks().forEach(t=>t.stop()); return; }
+        stream = s; video.srcObject = s; video.setAttribute('playsinline',''); video.play(); tick(); })
+      .catch(err => { $('#scanMsg').textContent = 'Camera not available (' + err.name + ') — use the box below.'; });
+  } else {
+    $('#scanMsg').textContent = 'Camera not supported here — use the box below.';
+  }
+  function tick(){
+    if(closed) return;
+    if(video.readyState === video.HAVE_ENOUGH_DATA && !busy){
+      canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      try{
+        const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const res = jsQR(img.data, img.width, img.height);
+        if(res && res.data){ tryCode(res.data); }
+      }catch(e){}
+    }
+    raf = requestAnimationFrame(tick);
+  }
+}
+
+// ------------------------------------------------------------------
+// MODALS
+// ------------------------------------------------------------------
+function modal(inner){
+  const bg = el('<div class="modal-bg"></div>');
+  const m = el('<div class="modal"></div>'); m.innerHTML = inner; bg.appendChild(m);
+  bg.onclick = (e)=>{ if(e.target===bg) bg.remove(); };
+  document.body.appendChild(bg);
+  return { bg, close:()=>bg.remove() };
+}
+
+function sampleForm(s={}){
+  return `<div class="grid2">
+    <div><label>Name *</label><input id="f_name" value="${esc(s.name)}"/></div>
+    <div><label>Material type</label><input id="f_material_type" value="${esc(s.material_type)}"/></div>
+    <div><label>Batch / lot</label><input id="f_batch_lot" value="${esc(s.batch_lot)}"/></div>
+    <div><label>Origin</label><input id="f_origin" value="${esc(s.origin)}"/></div>
+    <div><label>Quantity</label><input id="f_quantity" type="number" value="${s.quantity??''}"/></div>
+    <div><label>Unit</label><input id="f_unit" value="${esc(s.unit)}"/></div>
+    <div><label>Storage location</label><input id="f_storage_location" value="${esc(s.storage_location)}"/></div>
+    <div><label>Hazard class</label><input id="f_hazard_class" value="${esc(s.hazard_class||'none')}"/></div>
+  </div>
+  <label>Description</label><textarea id="f_description" rows="2">${esc(s.description)}</textarea>`;
+}
+function readSampleForm(){
+  const g=(id)=>$('#'+id).value;
+  return { name:g('f_name'), material_type:g('f_material_type'), batch_lot:g('f_batch_lot'),
+    origin:g('f_origin'), quantity:g('f_quantity')?Number(g('f_quantity')):null, unit:g('f_unit'),
+    storage_location:g('f_storage_location'), hazard_class:g('f_hazard_class'), description:g('f_description') };
+}
+
+function openNewSample(){
+  const {close}=modal(`<h2>New sample</h2>${sampleForm()}<div class="err" id="e"></div>
+    <div style="margin-top:16px;display:flex;gap:10px;justify-content:flex-end">
+      <button class="ghost" id="cancel">Cancel</button><button id="save">Create</button></div>`);
+  $('#cancel').onclick=close;
+  $('#save').onclick=async()=>{
+    try{ const r=await api('/api/samples',{method:'POST',body:readSampleForm()}); close(); renderDetail(r.id); }
+    catch(e){ $('#e').textContent=e.message; }
+  };
+}
+function openEditSample(s){
+  const {close}=modal(`<h2>Edit ${esc(s.sample_code)}</h2>${sampleForm(s)}<div class="err" id="e"></div>
+    <div style="margin-top:16px;display:flex;gap:10px;justify-content:flex-end">
+      <button class="ghost" id="cancel">Cancel</button><button id="save">Save</button></div>`);
+  $('#cancel').onclick=close;
+  $('#save').onclick=async()=>{
+    try{ await api('/api/samples/'+s.id,{method:'PUT',body:readSampleForm()}); close(); renderDetail(s.id); }
+    catch(e){ $('#e').textContent=e.message; }
+  };
+}
+function openAddTest(id){
+  const {close}=modal(`<h2>Log test / analysis</h2>
+    <div class="grid2">
+      <div><label>Test type *</label><input id="t_type" placeholder="tensile, FTIR, pH…"/></div>
+      <div><label>Method / standard</label><input id="t_method" placeholder="ASTM D638"/></div>
+      <div><label>Result value</label><input id="t_val"/></div>
+      <div><label>Unit</label><input id="t_unit"/></div>
+      <div><label>Outcome</label><select id="t_out"><option>pending</option><option>pass</option><option>fail</option><option>inconclusive</option></select></div>
+    </div><div class="err" id="e"></div>
+    <div style="margin-top:16px;display:flex;gap:10px;justify-content:flex-end">
+      <button class="ghost" id="cancel">Cancel</button><button id="save">Save</button></div>`);
+  $('#cancel').onclick=close;
+  $('#save').onclick=async()=>{
+    try{ await api('/api/samples/'+id+'/tests',{method:'POST',body:{
+      test_type:$('#t_type').value, method:$('#t_method').value, result_value:$('#t_val').value,
+      result_unit:$('#t_unit').value, outcome:$('#t_out').value }}); close(); renderDetail(id); }
+    catch(e){ $('#e').textContent=e.message; }
+  };
+}
+async function openAccess(id){
+  const [grants, users] = await Promise.all([ api('/api/samples/'+id+'/access'), api('/api/users') ]);
+  const partners = users.filter(u=>u.role==='partner');
+  const {bg,close}=modal(`<h2>Partner access</h2>
+    <div id="glist">${grants.map(g=>`<div class="flex-between" style="padding:6px 0;border-bottom:1px solid var(--line)">
+      <div>${esc(g.full_name)} <span class="muted">${esc(g.organization||'')}</span></div>
+      <button class="sm ghost" data-rm="${g.user_id}">Remove</button></div>`).join('')||'<div class="muted">No partners have access.</div>'}</div>
+    <label>Grant access to partner</label>
+    <div class="row"><select id="pu" style="flex:3">${partners.map(p=>`<option value="${p.id}">${esc(p.full_name)} — ${esc(p.organization||'')}</option>`).join('')}</select>
+    <button id="grant" style="flex:0 0 auto">Grant</button></div>
+    <div style="margin-top:16px;text-align:right"><button class="ghost" id="done">Close</button></div>`);
+  $('#done').onclick=close;
+  $('#grant').onclick=async()=>{ if($('#pu').value){ await api('/api/samples/'+id+'/access',{method:'POST',body:{user_id:Number($('#pu').value)}}); close(); openAccess(id);} };
+  bg.querySelectorAll('[data-rm]').forEach(b=>b.onclick=async()=>{ await api('/api/samples/'+id+'/access/'+b.dataset.rm,{method:'DELETE'}); close(); openAccess(id); });
+}
+async function openUsers(){
+  const users = await api('/api/users');
+  const isAdmin = state.user.role==='admin';
+  const {close}=modal(`<h2>Users</h2>
+    <table><thead><tr><th>Name</th><th>Role</th><th>Org</th></tr></thead><tbody>
+    ${users.map(u=>`<tr><td>${esc(u.full_name)}<div class="muted">${esc(u.email)}</div></td><td><span class="pill">${esc(u.role)}</span></td><td>${esc(u.organization||'—')}</td></tr>`).join('')}
+    </tbody></table>
+    ${isAdmin?`<h3>Add user</h3>
+    <div class="grid2">
+      <div><label>Full name</label><input id="u_name"/></div>
+      <div><label>Email</label><input id="u_email"/></div>
+      <div><label>Password</label><input id="u_pw" type="password"/></div>
+      <div><label>Role</label><select id="u_role"><option value="member">member</option><option value="admin">admin</option><option value="partner">partner</option></select></div>
+      <div><label>Organization (partners)</label><input id="u_org"/></div>
+    </div><div class="err" id="e"></div>
+    <div style="margin-top:12px;text-align:right"><button id="addU">Create user</button></div>`:''}
+    <div style="margin-top:14px;text-align:right"><button class="ghost" id="done">Close</button></div>`);
+  $('#done').onclick=close;
+  if($('#addU')) $('#addU').onclick=async()=>{
+    try{ await api('/api/users',{method:'POST',body:{ full_name:$('#u_name').value, email:$('#u_email').value,
+      password:$('#u_pw').value, role:$('#u_role').value, organization:$('#u_org').value }}); close(); openUsers(); }
+    catch(e){ $('#e').textContent=e.message; }
+  };
+}
+
+// boot
+renderLogin();
+</script>
+</body>
+</html>
