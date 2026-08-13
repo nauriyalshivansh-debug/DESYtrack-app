@@ -36,6 +36,19 @@ CREATE TABLE IF NOT EXISTS status_transitions (
   PRIMARY KEY (from_status, to_status)
 );
 
+-- ---------- REFERENCE: STATIONS (designated physical spots) ----------
+-- A station is a physical spot in the lab with its own QR poster. Scanning a
+-- sample at a station records WHERE the sample is (location) and, when the
+-- station represents a lifecycle stage, advances the sample's status too.
+CREATE TABLE IF NOT EXISTS stations (
+  code        TEXT PRIMARY KEY,                 -- e.g. 'STN-TESTING' (QR payload)
+  label       TEXT NOT NULL,                    -- e.g. 'Testing Bench'
+  location    TEXT NOT NULL,                    -- physical place, e.g. 'Lab 2 · Bench A'
+  set_status  TEXT REFERENCES statuses(code),   -- stage this spot moves samples into (NULL = location only)
+  sort_order  INTEGER NOT NULL DEFAULT 0,
+  is_active   INTEGER NOT NULL DEFAULT 1        -- BOOLEAN in Postgres
+);
+
 -- ---------- CORE: SAMPLES ----------
 
 CREATE TABLE IF NOT EXISTS samples (
@@ -52,6 +65,9 @@ CREATE TABLE IF NOT EXISTS samples (
   hazard_class   TEXT,                        -- GHS class or 'none'
   status         TEXT    NOT NULL DEFAULT 'received'
                          REFERENCES statuses(code),
+  -- where the sample physically is right now (set by the last station scan)
+  current_location TEXT,
+  current_station  TEXT REFERENCES stations(code),
   -- current custodian: who physically holds / is responsible for the sample now
   custodian_id   INTEGER REFERENCES users(id),
   created_by     INTEGER NOT NULL REFERENCES users(id),
@@ -69,9 +85,9 @@ CREATE INDEX IF NOT EXISTS idx_samples_material   ON samples(material_type);
 CREATE TABLE IF NOT EXISTS custody_events (
   id           INTEGER PRIMARY KEY AUTOINCREMENT,
   sample_id    INTEGER NOT NULL REFERENCES samples(id) ON DELETE CASCADE,
-  event_type   TEXT    NOT NULL              -- 'created','status_change','transfer','test_logged','note','edit'
+  event_type   TEXT    NOT NULL              -- lifecycle actions incl. station scans + file attachments
                        CHECK (event_type IN
-                       ('created','status_change','transfer','test_logged','note','edit')),
+                       ('created','status_change','transfer','test_logged','note','edit','scan','attachment')),
   from_value   TEXT,                          -- prior status / prior custodian, when relevant
   to_value     TEXT,                          -- new status / new custodian
   note         TEXT,
@@ -118,3 +134,22 @@ CREATE TABLE IF NOT EXISTS sample_access (
   created_at TEXT    NOT NULL DEFAULT (datetime('now')),
   PRIMARY KEY (sample_id, user_id)
 );
+
+-- ---------- ATTACHMENTS / DATA FILES ----------
+-- Files (e.g. beamline scan data) attached to a sample. The bytes live in object
+-- storage (S3-compatible) when configured, else on local disk; this row is the
+-- metadata + pointer. 'shared' files are visible to granted partners.
+CREATE TABLE IF NOT EXISTS attachments (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  sample_id    INTEGER NOT NULL REFERENCES samples(id) ON DELETE CASCADE,
+  filename     TEXT    NOT NULL,
+  content_type TEXT,
+  size_bytes   INTEGER,
+  storage_key  TEXT    NOT NULL,             -- object key / relative path
+  storage_mode TEXT    NOT NULL DEFAULT 'local',  -- 's3' | 'local'
+  visibility   TEXT    NOT NULL DEFAULT 'shared'
+                       CHECK (visibility IN ('shared','internal')),
+  uploaded_by  INTEGER REFERENCES users(id),
+  created_at   TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_attach_sample ON attachments(sample_id);

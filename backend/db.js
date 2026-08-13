@@ -15,6 +15,12 @@ db.exec('PRAGMA foreign_keys = ON');
 const schema = fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf8');
 db.exec(schema);
 
+// Idempotent column upgrades for databases created before stations existed.
+for (const ddl of [
+  'ALTER TABLE samples ADD COLUMN current_location TEXT',
+  'ALTER TABLE samples ADD COLUMN current_station TEXT',
+]) { try { db.exec(ddl); } catch (e) { /* column already present */ } }
+
 // ---- Seed status workflow (idempotent) ----
 const STATUSES = [
   ['received',   'Received',           1, 0],
@@ -25,12 +31,30 @@ const STATUSES = [
   ['shared',     'Shared with Partner',6, 0],
   ['archived',   'Archived',           7, 1],
   ['disposed',   'Disposed',           8, 1],
+  // DESY <-> industry logistics journey (added alongside the lab workflow)
+  ['with_industry',     'With Industry Partner', 9,  0],
+  ['in_transit_desy',   'In Transit to DESY',    10, 0],
+  ['desy_storage',      'DESY Storage',          11, 0],
+  ['at_beamline',       'At Beamline',           12, 0],
+  ['measured',          'Measurement Done',      13, 0],
+  ['in_transit_return', 'In Transit to Industry',14, 0],
+  ['returned',          'Returned to Industry',  15, 0],
 ];
 const TRANSITIONS = [
   ['received','registered'], ['registered','in_testing'], ['in_testing','on_hold'],
   ['on_hold','in_testing'],  ['in_testing','completed'],  ['completed','shared'],
   ['shared','completed'],    ['completed','archived'],    ['shared','archived'],
   ['archived','disposed'],   ['completed','disposed'],
+  // DESY <-> industry logistics journey
+  ['with_industry','in_transit_desy'], ['in_transit_desy','desy_storage'],
+  ['desy_storage','at_beamline'],      ['at_beamline','desy_storage'],
+  ['at_beamline','measured'],          ['measured','at_beamline'],
+  ['measured','desy_storage'],         ['desy_storage','in_transit_return'],
+  ['measured','in_transit_return'],    ['in_transit_return','returned'],
+  ['returned','with_industry'],
+  // bridges between the lab workflow and the logistics journey
+  ['registered','with_industry'],      ['desy_storage','in_testing'],
+  ['in_testing','desy_storage'],       ['returned','completed'],
 ];
 
 const insStatus = db.prepare(
@@ -39,6 +63,30 @@ STATUSES.forEach(s => insStatus.run(...s));
 const insTrans = db.prepare(
   'INSERT OR IGNORE INTO status_transitions(from_status,to_status) VALUES (?,?)');
 TRANSITIONS.forEach(t => insTrans.run(...t));
+
+// ---- Seed stations / designated spots (idempotent) ----
+// Each spot has a printable QR. Scanning a sample here sets its location and,
+// where set_status is given, advances its lifecycle stage. Order mirrors the
+// status workflow so scanning spot-to-spot follows the allowed transitions.
+const STATIONS = [
+  ['STN-RECEIVING', 'Receiving Bench',   'Intake Room · Bench 1', 'received',   1],
+  ['STN-REGISTER',  'Registration Desk', 'Intake Room · Desk 2',  'registered', 2],
+  ['STN-TESTING',   'Testing Bench',     'Lab 2 · Bench A',       'in_testing', 3],
+  ['STN-HOLD',      'Hold Rack',         'Lab 2 · Hold Shelf',    'on_hold',    4],
+  ['STN-QA',        'QA / Completion',   'Lab 3 · QA Desk',       'completed',  5],
+  ['STN-ARCHIVE',   'Archive Store',     'Store Room · Archive',  'archived',   6],
+  // DESY <-> industry logistics spots
+  ['STN-INDUSTRY',       'Industry Partner Site', 'Partner premises',        'with_industry',     10],
+  ['STN-TRANSIT-DESY',   'In Transit to DESY',    'Courier / shipping',      'in_transit_desy',   11],
+  ['STN-DESY-STORAGE',   'DESY Sample Storage',   'DESY · Sample store',     'desy_storage',      12],
+  ['STN-BEAMLINE',       'Beamline',              'DESY · Beamline hutch',   'at_beamline',       13],
+  ['STN-MEASURED',       'Measurement Complete',  'DESY · Beamline control', 'measured',          14],
+  ['STN-TRANSIT-RETURN', 'In Transit to Industry','Courier / shipping',      'in_transit_return', 15],
+  ['STN-RETURNED',       'Returned to Industry',  'Partner premises',        'returned',          16],
+];
+const insStation = db.prepare(
+  'INSERT OR IGNORE INTO stations(code,label,location,set_status,sort_order) VALUES (?,?,?,?,?)');
+STATIONS.forEach(s => insStation.run(...s));
 
 // ---- Seed demo users + samples only if the DB is empty ----
 const userCount = db.prepare('SELECT COUNT(*) n FROM users').get().n;
@@ -83,9 +131,17 @@ if (userCount === 0) {
 
   insEvent.run(s1,'created','received','Logged into system',admin);
   insEvent.run(s1,'status_change','in_testing','Started tensile prep',member);
+  insEvent.run(s1,'scan','in_testing','Scanned at Testing Bench · Lab 2 · Bench A',member);
   insEvent.run(s2,'created','received','Logged into system',admin);
   insEvent.run(s2,'status_change','completed','Corrosion panel finished',member);
+  insEvent.run(s2,'scan','completed','Scanned at QA / Completion · Lab 3 · QA Desk',member);
   insEvent.run(s3,'created','received','Field core received',admin);
+
+  // Record where each demo sample physically sits now (last station scan).
+  const setLoc = db.prepare('UPDATE samples SET current_station=?, current_location=? WHERE id=?');
+  setLoc.run('STN-TESTING',   'Lab 2 · Bench A',       s1);
+  setLoc.run('STN-QA',        'Lab 3 · QA Desk',       s2);
+  setLoc.run('STN-RECEIVING', 'Intake Room · Bench 1', s3);
 
   insTest.run(s2,'tensile','ASTM D638','310','MPa','pass',member,now);
   insTest.run(s2,'hardness','HRB','60','HRB','pass',member,now);

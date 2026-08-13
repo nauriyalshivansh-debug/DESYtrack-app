@@ -1,0 +1,32 @@
+# Render Blueprint — lets Render auto-configure the service from this repo.
+# On Render: New +  →  Blueprint  →  pick this repo. It reads this file.
+services:
+  - type: web
+    name: desytrack
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: JWT_SECRET      # a strong random login secret, generated for you
+        generateValue: true
+      - key: NODE_VERSION    # node:sqlite needs Node 22+
+        value: "22"
+      # PUBLIC_URL is optional: Render provides RENDER_EXTERNAL_URL automatically,
+      # which the app uses so QR codes point at your live web address.
+      #
+      # ---- Data-file persistence (optional but recommended for real use) ----
+      # Without these, uploaded files use local disk and are WIPED on every redeploy
+      # (fine for a demo). Set all four to store files in an S3-compatible bucket
+      # (Cloudflare R2, AWS S3, Backblaze B2, MinIO…) so they persist and can be large.
+      # Set them in the Render dashboard (Environment tab), not in git:
+      #   - key: S3_BUCKET
+      #     value: desytrack-data
+      #   - key: S3_ENDPOINT          # e.g. https://<account>.r2.cloudflarestorage.com  (omit for AWS S3)
+      #     value: ...
+      #   - key: S3_ACCESS_KEY_ID
+      #     sync: false
+      #   - key: S3_SECRET_ACCESS_KEY
+      #     sync: false
+      #   - key: S3_REGION            # 'auto' for R2; your region for AWS
+      #     value: auto

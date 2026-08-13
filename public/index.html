@@ -49,6 +49,12 @@
   .s-completed{background:#20362b;color:#a6e6c4}
   .s-shared{background:#233a44;color:#a9e0ef}
   .s-archived,.s-disposed{background:#2b2b2b;color:#bbb}
+  .s-with_industry{background:#2c2540;color:#d9c9ff}
+  .s-in_transit_desy,.s-in_transit_return{background:#33302a;color:#e6d3a0}
+  .s-desy_storage{background:#24303a;color:#bcd3e6}
+  .s-at_beamline{background:#12333a;color:#8fe4ef}
+  .s-measured{background:#1f3a2c;color:#a6e6c4}
+  .s-returned{background:#203629;color:#b8e6b0}
   .timeline{list-style:none;padding:0;margin:0}
   .timeline li{position:relative;padding:0 0 14px 20px;border-left:2px solid var(--line)}
   .timeline li:last-child{border-left-color:transparent}
@@ -67,6 +73,39 @@
   h2{font-size:18px;margin:0 0 4px}
   h3{font-size:14px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin:18px 0 8px}
   .flex-between{display:flex;justify-content:space-between;align-items:center;gap:10px}
+  /* ---- stations, scan-to-move, dashboard chart ---- */
+  .chart{display:flex;flex-direction:column;gap:9px}
+  .bar-row{display:grid;grid-template-columns:132px 1fr 30px;align-items:center;gap:10px}
+  .bar-row .cl{font-size:12px;color:var(--muted);text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .bar-row .track{background:var(--panel2);border-radius:6px;height:16px;overflow:hidden}
+  .bar-row .fill{height:100%;border-radius:6px;transition:width .6s cubic-bezier(.22,1,.36,1)}
+  .bar-row .cn{font-size:12px;font-weight:700;text-align:right}
+  .grid-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px}
+  .stn-card{background:var(--panel2);border:1px solid var(--line);border-radius:var(--radius);padding:16px;text-align:center}
+  .stn-card .qr{background:#fff;padding:10px;border-radius:8px;width:148px;height:148px;margin:0 auto 10px}
+  .stn-card h4{margin:0 0 2px;font-size:15px}
+  .scan-slots{display:grid;grid-template-columns:repeat(auto-fit,minmax(148px,1fr));gap:10px;margin:12px 0}
+  .slot{border:1px dashed var(--line);border-radius:10px;padding:12px;min-height:80px;background:var(--panel2);transition:border-color .2s,background .2s}
+  .slot.filled{border-style:solid;border-color:var(--accent);background:#17293b}
+  .slot .cap{font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted)}
+  .slot .v{font-weight:700;margin-top:5px;word-break:break-word}
+  .slot .sub{font-size:12px;color:var(--muted);margin-top:2px}
+  .feedback{border-radius:10px;padding:11px 14px;margin:6px 0 2px;font-weight:600;display:none}
+  .feedback.show{display:block;animation:pop .25s ease}
+  .feedback.ok{background:#173a2a;border:1px solid var(--accent2);color:#a6e6c4}
+  .feedback.warn{background:#3a3320;border:1px solid var(--warn);color:#f0d79a}
+  .feedback.bad{background:#3a2220;border:1px solid var(--danger);color:#f3c0bb}
+  @keyframes pop{from{transform:scale(.97);opacity:.35}to{transform:scale(1);opacity:1}}
+  .timeline li.scan::before{background:var(--accent2)}
+  button:disabled{opacity:.45;cursor:not-allowed}
+  .file-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)}
+  .file-row .fi{min-width:0}
+  .file-row .fn{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .vis-tag{font-size:11px;padding:1px 7px;border-radius:12px}
+  .vis-shared{background:#233a44;color:#a9e0ef}
+  .vis-internal{background:#3a2f20;color:#f0d79a}
+  .dropzone{border:1px dashed var(--line);border-radius:10px;padding:14px;text-align:center;color:var(--muted);cursor:pointer;transition:border-color .2s,background .2s}
+  .dropzone.hover{border-color:var(--accent);background:#17293b;color:var(--ink)}
 </style>
 </head>
 <body>
@@ -96,8 +135,18 @@ async function api(path, opts={}) {
   if (!res.ok) throw new Error(data.error || ('HTTP '+res.status));
   return data;
 }
+// QR content: once deployed, encode a full link so a normal phone camera opens the record;
+// locally (no public URL) encode the bare code for the in-app scanner.
+function qrPayload(code){ return state.publicUrl ? (state.publicUrl.replace(/\/+$/,'') + '/?code=' + encodeURIComponent(code)) : code; }
 const statusClass = (code) => 's-'+code;
 const statusLabel = (code) => (state.statuses.find(s=>s.code===code)||{}).label || code;
+// Vivid per-status fills for the dashboard chart (readable on the dark panel).
+const STATUS_FILL = { received:'#6f8aa6', registered:'#6c7bd6', in_testing:'#d7b45a',
+  on_hold:'#d98b83', completed:'#4fb488', shared:'#4fb0c9', archived:'#7a8794', disposed:'#5f6b76',
+  with_industry:'#8f6fd0', in_transit_desy:'#c9a24b', desy_storage:'#6f8aa6', at_beamline:'#3fb6cc',
+  measured:'#4fb488', in_transit_return:'#b9924b', returned:'#5cb46f' };
+const fmtBytes = (n) => { n=+n||0; if(n<1024) return n+' B'; if(n<1048576) return (n/1024).toFixed(1)+' KB';
+  if(n<1073741824) return (n/1048576).toFixed(1)+' MB'; return (n/1073741824).toFixed(2)+' GB'; };
 
 // ------------------------------------------------------------------
 // LOGIN
@@ -107,21 +156,17 @@ function renderLogin() {
   const wrap = el(`<div class="login-wrap card">
     <div class="brand" style="font-size:20px;font-weight:700;margin-bottom:4px">DESY<span style="color:var(--accent)">track</span></div>
     <div class="muted" style="margin-bottom:16px">Lab &amp; material sample tracking</div>
-    <label>Email</label><input id="email" value="admin@lab.test" />
-    <label>Password</label><input id="password" type="password" value="admin123" />
+    <label>Email</label><input id="email" placeholder="you@lab.test" autocomplete="username" />
+    <label>Password</label><input id="password" type="password" autocomplete="current-password" />
     <div style="margin-top:16px"><button id="go" style="width:100%">Sign in</button></div>
     <div class="err" id="loginErr"></div>
-    <div class="hint">Demo accounts:<br>
-      admin@lab.test / admin123 (admin)<br>
-      tech@lab.test / member123 (member)<br>
-      partner@acme.test / partner123 (partner — scoped view)</div>
   </div>`);
   document.getElementById('app').appendChild(wrap);
   const doLogin = async () => {
     $('#loginErr').textContent='';
     try {
       const r = await api('/api/login', { method:'POST', body:{ email:$('#email').value, password:$('#password').value }});
-      state.token = r.token; state.user = r.user;
+      state.token = r.token; state.user = r.user; state.publicUrl = r.publicUrl || '';
       state.statuses = await api('/api/statuses');
       renderApp();
     } catch(e){ $('#loginErr').textContent = e.message; }
@@ -164,20 +209,33 @@ async function renderList() {
 
   const tiles = stats.map(s=>`<div class="tile"><div class="n">${s.n}</div><div class="l">${esc(s.label)}</div></div>`).join('')
       || '<div class="muted">No samples yet.</div>';
+  const total = stats.reduce((a,s)=>a+s.n,0);
+  const maxN = Math.max(1, ...stats.map(s=>s.n));
+  const chartRows = stats.map(s=>{
+    const pct = Math.round(100*s.n/maxN);
+    const col = STATUS_FILL[s.status] || '#6f8aa6';
+    return `<div class="bar-row"><div class="cl" title="${esc(s.label)}">${esc(s.label)}</div>`
+      + `<div class="track"><div class="fill" style="width:${pct}%;background:${col}"></div></div>`
+      + `<div class="cn">${s.n}</div></div>`;
+  }).join('');
 
   c.innerHTML = `
     <div class="tiles">${tiles}</div>
+    ${stats.length?`<div class="card"><div class="flex-between" style="margin-bottom:12px">
+      <h3 style="margin:0">Samples by stage</h3><span class="muted">${total} total</span></div>
+      <div class="chart">${chartRows}</div></div>`:''}
     <div class="card">
       <div class="toolbar">
         <input id="q" placeholder="Search name, code, origin…" style="min-width:220px"/>
         <select id="fstatus"><option value="">All statuses</option>
           ${state.statuses.map(s=>`<option value="${s.code}">${esc(s.label)}</option>`).join('')}</select>
         ${internal?'<button id="new">+ New sample</button>':''}
-        <button class="ghost" id="scan">⛶ Scan QR</button>
+        <button class="ghost" id="scan">⛶ Scan</button>
         <div style="flex:1"></div>
+        ${internal?'<button class="ghost" id="stations">Stations</button>':''}
         ${internal?'<button class="ghost" id="mgUsers">Users</button>':''}
       </div>
-      <table><thead><tr><th>Code</th><th>Name</th><th>Material</th><th>Status</th><th>Custodian</th><th>Updated</th></tr></thead>
+      <table><thead><tr><th>Code</th><th>Name</th><th>Status</th><th>Location</th><th>Custodian</th><th>Updated</th></tr></thead>
       <tbody id="rows"></tbody></table>
     </div>`;
 
@@ -185,8 +243,8 @@ async function renderList() {
     $('#rows').innerHTML = list.map(s=>`<tr class="click" data-id="${s.id}">
       <td><span class="pill">${esc(s.sample_code)}</span></td>
       <td>${esc(s.name)}</td>
-      <td>${esc(s.material_type||'—')}</td>
       <td><span class="status ${statusClass(s.status)}">${esc(s.status_label)}</span></td>
+      <td class="muted">${esc(s.current_location||'—')}</td>
       <td>${esc(s.custodian_name||'—')}</td>
       <td class="muted">${esc((s.updated_at||'').slice(0,10))}</td></tr>`).join('')
       || '<tr><td colspan="6" class="muted">No matching samples.</td></tr>';
@@ -203,6 +261,7 @@ async function renderList() {
   $('#q').oninput = refilter; $('#fstatus').onchange = refilter;
   if($('#new')) $('#new').onclick = openNewSample;
   if($('#mgUsers')) $('#mgUsers').onclick = openUsers;
+  if($('#stations')) $('#stations').onclick = renderStations;
   if($('#scan')) $('#scan').onclick = openScan;
 }
 
@@ -234,6 +293,7 @@ async function renderDetail(id) {
         ${field('Origin', s.origin)}
         ${field('Quantity', (s.quantity!=null? s.quantity+' '+(s.unit||''):''))}
         ${field('Storage location', s.storage_location)}
+        ${field('Current location', s.current_location ? (s.current_location + (s.station_label ? ' · '+s.station_label : '')) : '')}
         ${field('Hazard class', s.hazard_class)}
         ${field('Custodian', s.custodian_name)}
         ${field('Received', s.received_at)}
@@ -256,6 +316,12 @@ async function renderDetail(id) {
       </div>
     </div>
 
+    <div class="card">
+      <div class="flex-between"><h3 style="margin:0">Data files</h3>${internal?'<button class="sm ghost" id="addFile">⬆ Upload</button>':''}</div>
+      <div class="muted" style="font-size:12px;margin:2px 0 10px">${internal?'Beamline scan data &amp; reports. <b>Shared</b> files are visible to the industry partner; <b>internal</b> files are staff-only.':'Data files shared with you by the DESY team.'}</div>
+      <div id="files"><div class="muted">Loading…</div></div>
+    </div>
+
     <div class="row">
       <div class="card">
         <div class="flex-between"><h3 style="margin:0">Tests / analyses</h3>${internal?'<button class="sm ghost" id="addTest">+ Add</button>':''}</div>
@@ -266,10 +332,14 @@ async function renderDetail(id) {
       </div>
       <div class="card">
         <h3 style="margin:0 0 8px">Chain of custody</h3>
-        <ul class="timeline">${d.events.map(e=>`<li>
-          <div><b>${esc(e.event_type.replace('_',' '))}</b>${e.to_value?` → ${esc(statusLabel(e.to_value)||e.to_value)}`:''}</div>
+        <ul class="timeline">${d.events.map(e=>{
+          const isScan=e.event_type==='scan';
+          const head=isScan?'📍 scan':esc(e.event_type.replace('_',' '));
+          const arrow=e.to_value?` → ${esc(statusLabel(e.to_value)||e.to_value)}`:'';
+          return `<li class="${isScan?'scan':''}">
+          <div><b>${head}</b>${arrow}</div>
           ${e.note?`<div class="muted">${esc(e.note)}</div>`:''}
-          <div class="t">${esc(e.actor)} · ${esc((e.created_at||'').slice(0,16))}</div></li>`).join('')}</ul>
+          <div class="t">${esc(e.actor)} · ${esc((e.created_at||'').slice(0,16))}</div></li>`;}).join('')}</ul>
       </div>
     </div>
 
@@ -300,9 +370,12 @@ async function renderDetail(id) {
   };
   if($('#mgAccess')) $('#mgAccess').onclick = ()=>openAccess(id);
 
+  renderFiles(id, internal);
+  if($('#addFile')) $('#addFile').onclick = ()=>openUpload(id);
+
   // --- QR label for this sample (generated locally from the accession code) ---
   const qr = qrcode(0, 'M');
-  qr.addData(s.sample_code);
+  qr.addData(qrPayload(s.sample_code));
   qr.make();
   if($('#qrBox')) $('#qrBox').innerHTML = qr.createSvgTag({ cellSize: 4, margin: 0, scalable: true });
   if($('#printQR')) $('#printQR').onclick = () => {
@@ -327,7 +400,118 @@ function extractCode(raw){
   }
   return code.trim();
 }
-function openScan(){
+async function openScan(){
+  if(state.user.role==='partner') return openScanOpen();  // partners: scan-to-open (read-only)
+  let stations=[], users=[];
+  try{ [stations, users] = await Promise.all([ api('/api/stations'), api('/api/users') ]); }catch(e){}
+  const stnByCode={}; stations.forEach(s=>stnByCode[s.code.toUpperCase()]=s);
+  const userById={}; users.forEach(u=>userById[u.id]=u);
+
+  const { bg } = modal(`<h2>Scan &amp; move</h2>
+    <div class="muted" style="margin-bottom:8px">Scan a <b>sample</b> and a <b>station</b> in any order (camera, USB scanner, or type below). Optionally scan a <b>handler badge</b> to record who took custody. When a sample and station are both set, it logs automatically.</div>
+    <video id="scanVid" playsinline muted style="width:100%;max-height:230px;background:#000;border-radius:8px"></video>
+    <div id="scanMsg" class="muted" style="margin-top:6px"></div>
+    <div class="scan-slots">
+      <div class="slot" id="slotS"><div class="cap">Sample</div><div class="v" id="svS">—</div><div class="sub" id="ssS"></div></div>
+      <div class="slot" id="slotT"><div class="cap">Station</div><div class="v" id="svT">—</div><div class="sub" id="ssT"></div></div>
+      <div class="slot" id="slotH"><div class="cap">Handler (optional)</div><div class="v" id="svH">—</div><div class="sub" id="ssH"></div></div>
+    </div>
+    <div class="feedback" id="fb"></div>
+    <label>Type / USB-scan a code</label>
+    <input id="scanInput" placeholder="SMP-2026-0001 · STN-BEAMLINE · USR-2" autocomplete="off"/>
+    <div class="err" id="scanErr"></div>
+    <div style="margin-top:14px;display:flex;gap:10px;justify-content:space-between;align-items:center">
+      <button class="ghost sm" id="scanReset">Reset</button>
+      <div style="display:flex;gap:10px">
+        <button class="ghost" id="openRec" disabled>Open record</button>
+        <button id="doMove" disabled>Log / move →</button>
+      </div>
+    </div>
+    <div style="text-align:right;margin-top:10px"><button class="ghost sm" id="scanClose">Close</button></div>`);
+
+  const video=$('#scanVid');
+  const canvas=document.createElement('canvas');
+  const ctx=canvas.getContext('2d',{willReadFrequently:true});
+  let stream=null, raf=null, closed=false, busy=false, lastCode='', lastAt=0;
+  let sample=null, station=null, handler=null;
+
+  const stop=()=>{ closed=true; if(raf) cancelAnimationFrame(raf); if(stream) stream.getTracks().forEach(t=>t.stop()); };
+  const closeAll=()=>{ stop(); bg.remove(); };
+  bg.onclick=(e)=>{ if(e.target===bg) closeAll(); };
+  $('#scanClose').onclick=closeAll;
+
+  const fb=(cls,msg)=>{ const f=$('#fb'); f.className='feedback show '+cls; f.textContent=msg; };
+  const clearFb=()=>{ $('#fb').className='feedback'; };
+
+  function refresh(){
+    const set=(slot,v,sub,val)=>{ const S=$(slot); S.classList.toggle('filled',!!val);
+      $(v).textContent = val ? val.main : '—'; $(sub).textContent = val ? (val.sub||'') : ''; };
+    set('#slotS','#svS','#ssS', sample && { main:sample.code, sub:sample.name||'' });
+    set('#slotT','#svT','#ssT', station && { main:station.label, sub:station.location+(station.status_label?(' · → '+station.status_label):'') });
+    set('#slotH','#svH','#ssH', handler && { main:handler.name, sub:'takes custody' });
+    $('#openRec').disabled = !(sample && sample.id);
+    $('#doMove').disabled = !(sample && sample.id && station);
+  }
+  async function handle(raw){
+    const code=extractCode(raw); if(!code) return;
+    const now=Date.now(); if(code===lastCode && now-lastAt<1500) return; lastCode=code; lastAt=now;
+    $('#scanErr').textContent='';
+    const up=code.toUpperCase();
+    if(/^STN-/.test(up)){
+      const st=stnByCode[up]; if(!st){ $('#scanErr').textContent='Unknown station: '+code; return; }
+      station=st; clearFb(); refresh(); maybeMove();
+    } else if(/^USR-\d+$/.test(up)){
+      const u=userById[Number(up.slice(4))];
+      if(!u){ $('#scanErr').textContent='Unknown handler badge: '+code; return; }
+      handler={ id:u.id, name:u.full_name }; clearFb(); refresh();
+    } else {
+      try{ const r=await api('/api/resolve?code='+encodeURIComponent(code));
+        sample={ code, id:r.id, name:'' };
+        api('/api/samples/'+r.id).then(d=>{ if(sample&&sample.id===r.id){ sample.name=d.sample.name; refresh(); } }).catch(()=>{});
+        clearFb(); refresh(); maybeMove();
+      }catch(err){ $('#scanErr').textContent=err.message; }
+    }
+  }
+  async function doMove(){
+    if(!(sample&&sample.id&&station)||busy) return;
+    busy=true; $('#doMove').disabled=true;
+    try{
+      const body={ sample_code:sample.code, station_code:station.code };
+      if(handler) body.handler_code='USR-'+handler.id;
+      const r=await api('/api/scan',{method:'POST',body});
+      fb(r.statusBlocked?'warn':'ok', r.message);
+      sample=null; lastCode='';   // keep station + handler for the next sample (batch at one spot)
+      refresh();
+    }catch(err){ fb('bad', err.message); }
+    finally{ busy=false; }
+  }
+  function maybeMove(){ if(sample&&sample.id&&station&&!busy) doMove(); }
+
+  $('#doMove').onclick=doMove;
+  $('#openRec').onclick=()=>{ if(sample&&sample.id){ closeAll(); renderDetail(sample.id); } };
+  $('#scanReset').onclick=()=>{ sample=null; station=null; handler=null; lastCode=''; clearFb(); $('#scanErr').textContent=''; refresh(); };
+  const inp0=$('#scanInput'); inp0.focus();
+  inp0.onkeydown=(e)=>{ if(e.key==='Enter'){ handle(inp0.value); inp0.value=''; } };
+
+  if(navigator.mediaDevices && navigator.mediaDevices.getUserMedia){
+    navigator.mediaDevices.getUserMedia({ video:{ facingMode:'environment' } })
+      .then(s=>{ if(closed){ s.getTracks().forEach(t=>t.stop()); return; }
+        stream=s; video.srcObject=s; video.setAttribute('playsinline',''); video.play(); tick(); })
+      .catch(err=>{ $('#scanMsg').textContent='Camera not available ('+err.name+') — use the box below.'; });
+  } else { $('#scanMsg').textContent='Camera not supported here — use the box below.'; }
+  function tick(){
+    if(closed) return;
+    if(video.readyState===video.HAVE_ENOUGH_DATA){
+      canvas.width=video.videoWidth; canvas.height=video.videoHeight;
+      ctx.drawImage(video,0,0,canvas.width,canvas.height);
+      try{ const img=ctx.getImageData(0,0,canvas.width,canvas.height); const res=jsQR(img.data,img.width,img.height); if(res&&res.data) handle(res.data); }catch(e){}
+    }
+    raf=requestAnimationFrame(tick);
+  }
+  refresh();
+}
+
+function openScanOpen(){
   const { bg } = modal(`<h2>Scan a sample</h2>
     <div class="muted" style="margin-bottom:8px">Point the camera at a sample's QR label — or scan into the box with a USB barcode scanner, or just type a code and press Enter.</div>
     <video id="scanVid" playsinline muted style="width:100%;max-height:300px;background:#000;border-radius:8px"></video>
@@ -387,6 +571,179 @@ function openScan(){
     }
     raf = requestAnimationFrame(tick);
   }
+}
+
+// ------------------------------------------------------------------
+// DATA FILES (attachments)
+// ------------------------------------------------------------------
+async function renderFiles(id, internal){
+  const box = $('#files'); if(!box) return;
+  let files;
+  try{ files = await api('/api/samples/'+id+'/attachments'); }
+  catch(e){ box.innerHTML = `<div class="err">${esc(e.message)}</div>`; return; }
+  if(!files.length){ box.innerHTML = '<div class="muted">No data files yet.</div>'; return; }
+  box.innerHTML = files.map(f=>`<div class="file-row">
+    <div class="fi">
+      <div class="fn">${esc(f.filename)}</div>
+      <div class="t muted">${esc(f.uploader||'')} · ${esc((f.created_at||'').slice(0,16))} · ${fmtBytes(f.size_bytes)}
+        <span class="vis-tag ${f.visibility==='internal'?'vis-internal':'vis-shared'}">${esc(f.visibility)}</span></div>
+    </div>
+    <div style="display:flex;gap:8px;flex:0 0 auto">
+      <button class="sm ghost" data-dl="${f.id}">Download</button>
+      ${internal?`<button class="sm ghost" data-rmf="${f.id}">Remove</button>`:''}
+    </div></div>`).join('');
+  box.querySelectorAll('[data-dl]').forEach(b=>b.onclick=()=>downloadFile(b.dataset.dl));
+  box.querySelectorAll('[data-rmf]').forEach(b=>b.onclick=async()=>{
+    if(!confirm('Remove this file from the record?')) return;
+    try{ await api('/api/attachments/'+b.dataset.rmf,{method:'DELETE'}); renderFiles(id, internal); }catch(e){ alert(e.message); }
+  });
+}
+async function downloadFile(aid){
+  try{
+    const r = await api('/api/attachments/'+aid+'/link');
+    const a = document.createElement('a'); a.href = r.url; a.rel = 'noopener';
+    if(/^https?:\/\//i.test(r.url)) a.target = '_blank';   // presigned bucket URL
+    document.body.appendChild(a); a.click(); a.remove();
+  }catch(e){ alert(e.message); }
+}
+function openUpload(id){
+  const {close}=modal(`<h2>Upload a data file</h2>
+    <div class="muted" style="margin-bottom:10px">Attach beamline scan data or a report to this sample.</div>
+    <input type="file" id="upFile"/>
+    <label style="margin-top:12px">Visibility</label>
+    <select id="upVis"><option value="shared">Shared — the industry partner can see &amp; download it</option>
+      <option value="internal">Internal — DESY staff only</option></select>
+    <div id="upProg" class="muted" style="margin-top:10px"></div>
+    <div class="err" id="e"></div>
+    <div style="margin-top:16px;display:flex;gap:10px;justify-content:flex-end">
+      <button class="ghost" id="cancel">Cancel</button><button id="save">Upload</button></div>`);
+  $('#cancel').onclick=close;
+  $('#save').onclick=async()=>{
+    const f = $('#upFile').files[0];
+    if(!f){ $('#e').textContent='Choose a file first.'; return; }
+    $('#e').textContent=''; $('#save').disabled=true;
+    $('#upProg').textContent='Uploading '+f.name+' ('+fmtBytes(f.size)+')…';
+    try{ await uploadAttachment(id, f, $('#upVis').value); close(); renderDetail(id); }
+    catch(err){ $('#e').textContent=err.message; $('#save').disabled=false; $('#upProg').textContent=''; }
+  };
+}
+async function uploadAttachment(sampleId, file, visibility){
+  const pre = await api('/api/samples/'+sampleId+'/attachments/presign',{method:'POST',
+    body:{ filename:file.name, content_type:file.type||'application/octet-stream' }});
+  const headers = { ...(pre.headers||{}) };
+  if(pre.storage_mode==='local' && state.token) headers.Authorization = 'Bearer '+state.token; // S3 mode signs via URL
+  const put = await fetch(pre.url, { method:'PUT', headers, body:file });
+  if(!put.ok) throw new Error('Upload failed ('+put.status+')');
+  await api('/api/samples/'+sampleId+'/attachments',{method:'POST',
+    body:{ key:pre.key, filename:file.name, content_type:file.type||null, size_bytes:file.size, visibility }});
+}
+
+// ------------------------------------------------------------------
+// STATIONS VIEW (printable QR posters for each designated spot)
+// ------------------------------------------------------------------
+async function renderStations(){
+  const c = $('#content');
+  c.innerHTML = '<div class="muted">Loading…</div>';
+  const stations = await api('/api/stations');
+  const isAdmin = state.user.role==='admin';
+  c.innerHTML = `
+    <div class="flex-between" style="margin-bottom:10px">
+      <button class="ghost sm" id="back">← All samples</button>
+      <div style="display:flex;gap:8px">
+        ${isAdmin?'<button class="sm" id="addStn">+ Add spot</button>':''}
+        <button class="sm ghost" id="printAll">🖶 Print all</button>
+      </div>
+    </div>
+    <div class="card">
+      <h2 style="margin:0 0 4px">Station QR posters</h2>
+      <div class="muted" style="margin-bottom:14px">Print a poster for each designated spot and put it up. A technician taps <b>Scan</b>, scans a sample, then this spot (and optionally their own badge) — the sample's location is logged and, where the spot is a stage, its status advances.</div>
+      <div class="grid-cards" id="stnCards"></div>
+    </div>`;
+  $('#back').onclick = renderList;
+  const box = $('#stnCards');
+  stations.forEach(st=>{
+    const card = el(`<div class="stn-card">
+      <div class="qr"></div>
+      <h4>${esc(st.label)}</h4>
+      <div class="muted" style="font-size:12px">${esc(st.location)}</div>
+      <div style="margin:8px 0">${st.status_label?`<span class="status ${statusClass(st.set_status)}">→ ${esc(st.status_label)}</span>`:'<span class="pill">location only</span>'}</div>
+      <div><span class="pill">${esc(st.code)}</span></div>
+      <div style="margin-top:10px"><button class="sm ghost">🖶 Print</button></div>
+    </div>`);
+    const qr = qrcode(0,'M'); qr.addData(st.code); qr.make();
+    card.querySelector('.qr').innerHTML = qr.createSvgTag({cellSize:4,margin:0,scalable:true});
+    card.querySelector('button').onclick = ()=>printStation(st, qr);
+    box.appendChild(card);
+  });
+  if($('#addStn')) $('#addStn').onclick = ()=>openStationForm();
+  if($('#printAll')) $('#printAll').onclick = ()=>printAllStations(stations);
+}
+function printStation(st, qr){
+  const svg = qr.createSvgTag({cellSize:8,margin:1});
+  const w = window.open('','_blank','width=430,height=580'); if(!w) return;
+  w.document.write(`<html><head><title>${esc(st.code)}</title>
+    <style>body{font-family:sans-serif;text-align:center;margin:28px}
+    h1{font-size:22px;margin:14px 0 2px}.loc{color:#444;font-size:14px}
+    .tag{display:inline-block;margin-top:8px;padding:3px 10px;border:1px solid #999;border-radius:20px;font-size:13px;color:#333}
+    .code{margin-top:8px;color:#666;font-size:12px}.ins{margin:14px auto 0;font-size:12px;color:#555;max-width:300px}</style></head>
+    <body>${svg}<h1>${esc(st.label)}</h1><div class="loc">${esc(st.location)}</div>
+    ${st.status_label?`<div class="tag">Sets stage → ${esc(st.status_label)}</div>`:'<div class="tag">Location checkpoint</div>'}
+    <div class="code">${esc(st.code)}</div>
+    <div class="ins">Scan a sample, then scan this poster to log it here${st.status_label?' and advance its stage':''}.</div>
+    <scr`+`ipt>window.onload=function(){window.print();}</scr`+`ipt></body></html>`);
+  w.document.close();
+}
+function printAllStations(stations){
+  const parts = stations.map(st=>{ const qr=qrcode(0,'M'); qr.addData(st.code); qr.make();
+    return `<div class="poster">${qr.createSvgTag({cellSize:6,margin:1})}<h1>${esc(st.label)}</h1>
+      <div class="loc">${esc(st.location)}</div>${st.status_label?`<div class="tag">→ ${esc(st.status_label)}</div>`:'<div class="tag">Location</div>'}
+      <div class="code">${esc(st.code)}</div></div>`; }).join('');
+  const w = window.open('','_blank','width=820,height=900'); if(!w) return;
+  w.document.write(`<html><head><title>Station posters</title>
+    <style>body{font-family:sans-serif;margin:0}.poster{page-break-after:always;text-align:center;padding:40px}
+    h1{font-size:24px;margin:16px 0 4px}.loc{color:#444}.tag{display:inline-block;margin-top:8px;padding:3px 10px;border:1px solid #999;border-radius:20px;font-size:13px}.code{margin-top:8px;color:#666;font-size:12px}</style></head>
+    <body>${parts}<scr`+`ipt>window.onload=function(){window.print();}</scr`+`ipt></body></html>`);
+  w.document.close();
+}
+function printBadge(id, name){
+  const code='USR-'+id; const qr=qrcode(0,'M'); qr.addData(code); qr.make();
+  const svg=qr.createSvgTag({cellSize:7,margin:1});
+  const w=window.open('','_blank','width=360,height=460'); if(!w) return;
+  w.document.write(`<html><head><title>${esc(code)}</title>
+    <style>body{font-family:sans-serif;text-align:center;margin:24px}h2{font-size:18px;margin:12px 0 2px}.r{color:#666;font-size:12px}.ins{margin:12px auto 0;font-size:11px;color:#666;max-width:260px}</style></head>
+    <body>${svg}<h2>${esc(name)}</h2><div class="r">${esc(code)} · handler badge</div>
+    <div class="ins">Scan at a station to record that you took custody of the sample.</div>
+    <scr`+`ipt>window.onload=function(){window.print();}</scr`+`ipt></body></html>`);
+  w.document.close();
+}
+function printAllBadges(users){
+  const parts=users.map(u=>{ const code='USR-'+u.id; const qr=qrcode(0,'M'); qr.addData(code); qr.make();
+    return `<div class="poster">${qr.createSvgTag({cellSize:6,margin:1})}<h2>${esc(u.full_name)}</h2><div class="r">${esc(code)}</div></div>`; }).join('');
+  const w=window.open('','_blank','width=760,height=900'); if(!w) return;
+  w.document.write(`<html><head><title>Staff badges</title>
+    <style>body{font-family:sans-serif;margin:0}.poster{page-break-after:always;text-align:center;padding:40px}h2{font-size:20px;margin:14px 0 2px}.r{color:#666;font-size:12px}</style></head>
+    <body>${parts}<scr`+`ipt>window.onload=function(){window.print();}</scr`+`ipt></body></html>`);
+  w.document.close();
+}
+function openStationForm(){
+  const opts = state.statuses.map(s=>`<option value="${s.code}">${esc(s.label)}</option>`).join('');
+  const {close}=modal(`<h2>Add / update a spot</h2>
+    <div class="grid2">
+      <div><label>Code *</label><input id="s_code" placeholder="STN-PACKING"/></div>
+      <div><label>Label *</label><input id="s_label" placeholder="Packing Bench"/></div>
+      <div><label>Location *</label><input id="s_location" placeholder="Room 3 · Bench C"/></div>
+      <div><label>Sets stage to</label><select id="s_status"><option value="">— location only —</option>${opts}</select></div>
+      <div><label>Sort order</label><input id="s_sort" type="number" value="20"/></div>
+    </div><div class="err" id="e"></div>
+    <div style="margin-top:16px;display:flex;gap:10px;justify-content:flex-end">
+      <button class="ghost" id="cancel">Cancel</button><button id="save">Save spot</button></div>`);
+  $('#cancel').onclick=close;
+  $('#save').onclick=async()=>{
+    try{ await api('/api/stations',{method:'POST',body:{ code:$('#s_code').value, label:$('#s_label').value,
+      location:$('#s_location').value, set_status:$('#s_status').value||null, sort_order:Number($('#s_sort').value)||0 }});
+      close(); renderStations(); }
+    catch(e){ $('#e').textContent=e.message; }
+  };
 }
 
 // ------------------------------------------------------------------
@@ -477,9 +834,12 @@ async function openAccess(id){
 async function openUsers(){
   const users = await api('/api/users');
   const isAdmin = state.user.role==='admin';
-  const {close}=modal(`<h2>Users</h2>
-    <table><thead><tr><th>Name</th><th>Role</th><th>Org</th></tr></thead><tbody>
-    ${users.map(u=>`<tr><td>${esc(u.full_name)}<div class="muted">${esc(u.email)}</div></td><td><span class="pill">${esc(u.role)}</span></td><td>${esc(u.organization||'—')}</td></tr>`).join('')}
+  const {close}=modal(`<div class="flex-between"><h2 style="margin:0">Users</h2>
+      <button class="sm ghost" id="printBadges">🖶 Print staff badges</button></div>
+    <table><thead><tr><th>Name</th><th>Role</th><th>Org</th><th></th></tr></thead><tbody>
+    ${users.map(u=>`<tr><td>${esc(u.full_name)}<div class="muted">${esc(u.email)}</div></td>
+      <td><span class="pill">${esc(u.role)}</span></td><td>${esc(u.organization||'—')}</td>
+      <td style="text-align:right">${u.role!=='partner'?`<button class="sm ghost" data-badge="${u.id}" data-name="${esc(u.full_name)}">Badge</button>`:''}</td></tr>`).join('')}
     </tbody></table>
     ${isAdmin?`<h3>Add user</h3>
     <div class="grid2">
@@ -492,6 +852,8 @@ async function openUsers(){
     <div style="margin-top:12px;text-align:right"><button id="addU">Create user</button></div>`:''}
     <div style="margin-top:14px;text-align:right"><button class="ghost" id="done">Close</button></div>`);
   $('#done').onclick=close;
+  if($('#printBadges')) $('#printBadges').onclick=()=>printAllBadges(users.filter(u=>u.role!=='partner'));
+  document.querySelectorAll('[data-badge]').forEach(b=>b.onclick=()=>printBadge(Number(b.dataset.badge), b.dataset.name));
   if($('#addU')) $('#addU').onclick=async()=>{
     try{ await api('/api/users',{method:'POST',body:{ full_name:$('#u_name').value, email:$('#u_email').value,
       password:$('#u_pw').value, role:$('#u_role').value, organization:$('#u_org').value }}); close(); openUsers(); }

@@ -10,13 +10,21 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const db = require('./db');
+const storage = require('./storage');
 
 const app = express();
-app.use(express.json());
+// Parse JSON for every route EXCEPT the raw file-upload receiver (which streams bytes of any type).
+app.use((req, res, next) => {
+  if (req.path === '/api/uploads/local') return next();
+  return express.json()(req, res, next);
+});
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-me';
 const PORT = process.env.PORT || 3000;
+// Public base URL of the deployed app. On Render this is provided automatically.
+// When set, QR codes encode a full link (…/?code=SMP-…) so a normal phone camera opens the record.
+const PUBLIC_URL = process.env.PUBLIC_URL || process.env.RENDER_EXTERNAL_URL || '';
 
 // ------------------------------------------------------------------
 // Helpers
@@ -68,7 +76,7 @@ app.post('/api/login', (req, res) => {
   const user = db.prepare('SELECT * FROM users WHERE email=? AND is_active=1').get(email);
   if (!user || !bcrypt.compareSync(password || '', user.password_hash))
     return res.status(401).json({ error: 'Invalid email or password' });
-  res.json({ token: sign(user), user: { id: user.id, name: user.full_name, role: user.role, organization: user.organization } });
+  res.json({ token: sign(user), publicUrl: PUBLIC_URL, user: { id: user.id, name: user.full_name, role: user.role, organization: user.organization } });
 });
 
 app.get('/api/me', auth, (req, res) => res.json({ user: req.user }));
@@ -136,9 +144,11 @@ app.get('/api/samples/:id', auth, (req, res) => {
   const id = req.params.id;
   const access = accessRow(id, req.user);
   if (!access) return res.status(404).json({ error: 'Not found' });
-  const sample = db.prepare(`SELECT s.*, st.label AS status_label, u.full_name AS custodian_name
+  const sample = db.prepare(`SELECT s.*, st.label AS status_label, u.full_name AS custodian_name,
+       sn.label AS station_label
      FROM samples s JOIN statuses st ON st.code=s.status
-     LEFT JOIN users u ON u.id=s.custodian_id WHERE s.id=?`).get(id);
+     LEFT JOIN users u ON u.id=s.custodian_id
+     LEFT JOIN stations sn ON sn.code=s.current_station WHERE s.id=?`).get(id);
   if (!sample) return res.status(404).json({ error: 'Not found' });
 
   const tests = db.prepare('SELECT t.*, u.full_name AS performer FROM tests t LEFT JOIN users u ON u.id=t.performed_by WHERE sample_id=? ORDER BY created_at DESC').all(id);
@@ -271,6 +281,97 @@ app.get('/api/resolve', auth, (req, res) => {
   res.json({ id: s.id });
 });
 
+// ------------------------------------------------------------------
+// Stations — designated physical spots, each with its own QR poster
+// ------------------------------------------------------------------
+app.get('/api/stations', auth, (req, res) => {
+  res.json(db.prepare(`SELECT st.*, s.label AS status_label
+     FROM stations st LEFT JOIN statuses s ON s.code=st.set_status
+     WHERE st.is_active=1 ORDER BY st.sort_order, st.label`).all());
+});
+
+// Create or update a station (admin only).
+app.post('/api/stations', auth, requireRole('admin'), (req, res) => {
+  const b = req.body || {};
+  const code = (b.code || '').trim().toUpperCase();
+  if (!code || !b.label || !b.location) return res.status(400).json({ error: 'code, label, location required' });
+  if (!/^STN-[A-Z0-9-]+$/.test(code)) return res.status(400).json({ error: 'code must look like STN-TESTING' });
+  if (b.set_status && !db.prepare('SELECT 1 FROM statuses WHERE code=?').get(b.set_status))
+    return res.status(400).json({ error: 'unknown set_status' });
+  db.prepare(`INSERT INTO stations(code,label,location,set_status,sort_order,is_active)
+     VALUES (@code,@label,@location,@set_status,@sort_order,1)
+     ON CONFLICT(code) DO UPDATE SET label=excluded.label, location=excluded.location,
+       set_status=excluded.set_status, sort_order=excluded.sort_order, is_active=1`)
+    .run({ code, label: b.label, location: b.location, set_status: b.set_status || null,
+           sort_order: Number.isFinite(+b.sort_order) ? +b.sort_order : 0 });
+  res.status(201).json({ ok: true, code });
+});
+
+// Scan a sample at a station. Client sends both codes (captured in either order).
+// Records the sample's physical location and advances its stage when the station
+// maps to a status AND that transition is allowed. Internal users only.
+app.post('/api/scan', auth, requireRole('admin', 'member'), (req, res) => {
+  const b = req.body || {};
+  const sampleCode = (b.sample_code || '').trim();
+  const stationCode = (b.station_code || '').trim().toUpperCase();
+  if (!sampleCode || !stationCode) return res.status(400).json({ error: 'sample_code and station_code required' });
+
+  const sample = db.prepare('SELECT * FROM samples WHERE sample_code=?').get(sampleCode);
+  if (!sample) return res.status(404).json({ error: `No sample found for code "${sampleCode}"` });
+  const station = db.prepare('SELECT * FROM stations WHERE code=? AND is_active=1').get(stationCode);
+  if (!station) return res.status(404).json({ error: `No station found for code "${stationCode}"` });
+
+  // Optional handler badge (USR-<id>): who is taking custody at this spot.
+  let handler = null;
+  const handlerCode = (b.handler_code || '').trim().toUpperCase();
+  if (handlerCode) {
+    const m = /^USR-(\d+)$/.exec(handlerCode);
+    if (m) handler = db.prepare('SELECT id, full_name FROM users WHERE id=? AND is_active=1').get(Number(m[1]));
+    if (!handler) return res.status(404).json({ error: `Unknown handler badge "${handlerCode}"` });
+  }
+
+  const label = (code) => (db.prepare('SELECT label FROM statuses WHERE code=?').get(code) || {}).label || code;
+  const fromStatus = sample.status;
+  let toStatus = fromStatus, statusChanged = false, statusBlocked = false;
+
+  if (station.set_status && station.set_status !== fromStatus) {
+    const allowed = db.prepare('SELECT 1 FROM status_transitions WHERE from_status=? AND to_status=?')
+      .get(fromStatus, station.set_status);
+    if (allowed) { toStatus = station.set_status; statusChanged = true; }
+    else { statusBlocked = true; }
+  }
+
+  db.prepare(`UPDATE samples SET current_station=?, current_location=?, status=?, updated_at=datetime('now') WHERE id=?`)
+    .run(station.code, station.location, toStatus, sample.id);
+
+  // Handler badge → custody handoff to that person.
+  let custodyMsg = '';
+  if (handler && handler.id !== sample.custodian_id) {
+    db.prepare("UPDATE samples SET custodian_id=?, updated_at=datetime('now') WHERE id=?").run(handler.id, sample.id);
+    logEvent(sample.id, 'transfer', String(sample.custodian_id || ''), String(handler.id),
+      `Custody to ${handler.full_name} (badge scan)`, req.user.id);
+    custodyMsg = ` Custody → ${handler.full_name}.`;
+  }
+
+  let message;
+  if (statusChanged)      message = `Moved to ${station.label} — stage advanced to '${label(toStatus)}'.`;
+  else if (statusBlocked) message = `Logged at ${station.label}. Stage kept at '${label(fromStatus)}' — ${label(fromStatus)} → ${label(station.set_status)} isn't an allowed step.`;
+  else                    message = `Logged at ${station.label} — already at '${label(fromStatus)}'.`;
+  message += custodyMsg;
+
+  logEvent(sample.id, 'scan', statusChanged ? fromStatus : null, statusChanged ? toStatus : null,
+    `Scanned at ${station.label} · ${station.location}${statusBlocked ? ' — stage change skipped (not an allowed step)' : ''}`,
+    req.user.id);
+
+  res.json({
+    ok: true, statusChanged, statusBlocked, fromStatus, toStatus,
+    fromStatusLabel: label(fromStatus), toStatusLabel: label(toStatus), message,
+    handler: handler ? { id: handler.id, name: handler.full_name } : null,
+    sample: { id: sample.id, sample_code: sample.sample_code, name: sample.name },
+    station: { code: station.code, label: station.label, location: station.location, set_status: station.set_status },
+  });
+});
+
 // Dashboard counts by status (respects partner scoping).
 app.get('/api/stats', auth, (req, res) => {
   let sql = `SELECT s.status, st.label, COUNT(*) n FROM samples s JOIN statuses st ON st.code=s.status`;
@@ -280,4 +381,91 @@ app.get('/api/stats', auth, (req, res) => {
   res.json(db.prepare(sql).all(args));
 });
 
-app.listen(PORT, () => console.log(`DESYtrack API + UI running on http://localhost:${PORT}`));
+// ------------------------------------------------------------------
+// Attachments / data files — object storage, partner-visible when 'shared'
+// ------------------------------------------------------------------
+const RAW_LIMIT = (process.env.MAX_UPLOAD_MB || '50') + 'mb';
+
+// Step 1: browser asks where to upload → presigned S3 PUT, or a local URL in fallback mode.
+app.post('/api/samples/:id/attachments/presign', auth, requireRole('admin', 'member'), async (req, res) => {
+  const id = req.params.id;
+  if (!db.prepare('SELECT 1 FROM samples WHERE id=?').get(id)) return res.status(404).json({ error: 'Not found' });
+  const { filename, content_type } = req.body || {};
+  if (!filename) return res.status(400).json({ error: 'filename required' });
+  const key = storage.newKey(id, filename);
+  const target = await storage.presignPut(key, content_type);
+  res.json({ ...target, key, storage_mode: storage.mode });
+});
+
+// Local-disk receiver (fallback mode only). S3 uploads go straight to the bucket, not here.
+app.put('/api/uploads/local', auth, requireRole('admin', 'member'),
+  express.raw({ type: '*/*', limit: RAW_LIMIT }), (req, res) => {
+    if (storage.useS3) return res.status(400).json({ error: 'local upload disabled (S3 configured)' });
+    const key = req.query.key || '';
+    if (!/^samples\//.test(key)) return res.status(400).json({ error: 'bad key' });
+    try { storage.saveLocal(key, req.body); res.json({ ok: true }); }
+    catch (e) { res.status(500).json({ error: 'save failed' }); }
+  });
+
+// Step 2: record the finished upload's metadata.
+app.post('/api/samples/:id/attachments', auth, requireRole('admin', 'member'), (req, res) => {
+  const id = req.params.id;
+  if (!db.prepare('SELECT 1 FROM samples WHERE id=?').get(id)) return res.status(404).json({ error: 'Not found' });
+  const b = req.body || {};
+  if (!b.key || !b.filename) return res.status(400).json({ error: 'key and filename required' });
+  const visibility = (b.visibility === 'internal') ? 'internal' : 'shared';
+  const info = db.prepare(`INSERT INTO attachments(sample_id,filename,content_type,size_bytes,storage_key,storage_mode,visibility,uploaded_by)
+     VALUES (?,?,?,?,?,?,?,?)`).run(id, b.filename, b.content_type || null, b.size_bytes || null, b.key, storage.mode, visibility, req.user.id);
+  logEvent(id, 'attachment', null, b.filename, `Data file added: ${b.filename} (${visibility})`, req.user.id);
+  res.status(201).json({ id: info.lastInsertRowid });
+});
+
+// List a sample's files (partners see only 'shared').
+app.get('/api/samples/:id/attachments', auth, (req, res) => {
+  const id = req.params.id;
+  const access = accessRow(id, req.user);
+  if (!access) return res.status(404).json({ error: 'Not found' });
+  const base = `SELECT a.id,a.filename,a.content_type,a.size_bytes,a.visibility,a.storage_mode,a.created_at,
+     u.full_name AS uploader FROM attachments a LEFT JOIN users u ON u.id=a.uploaded_by WHERE a.sample_id=?`;
+  const sql = isInternal(req.user) ? base + ' ORDER BY a.created_at DESC'
+                                   : base + " AND a.visibility='shared' ORDER BY a.created_at DESC";
+  res.json(db.prepare(sql).all(id));
+});
+
+// Short-lived download link (access-checked). S3 → presigned bucket URL; local → tokenised app URL.
+app.get('/api/attachments/:aid/link', auth, async (req, res) => {
+  const a = db.prepare('SELECT * FROM attachments WHERE id=?').get(req.params.aid);
+  if (!a) return res.status(404).json({ error: 'Not found' });
+  const access = accessRow(a.sample_id, req.user);
+  if (!access) return res.status(404).json({ error: 'Not found' });
+  if (!isInternal(req.user) && a.visibility !== 'shared') return res.status(403).json({ error: 'Forbidden' });
+  if (a.storage_mode === 's3') {
+    return res.json({ url: await storage.presignGet(a.storage_key, a.filename) });
+  }
+  if (!storage.existsLocal(a.storage_key))
+    return res.status(410).json({ error: 'File no longer available — local storage was reset. Re-upload, or configure S3 for persistence.' });
+  const t = jwt.sign({ aid: a.id, s: 'dl' }, JWT_SECRET, { expiresIn: '5m' });
+  res.json({ url: `/api/attachments/${a.id}/raw?t=${encodeURIComponent(t)}` });
+});
+
+// Tokenised local streamer (no auth header needed; the token carries authorization).
+app.get('/api/attachments/:aid/raw', (req, res) => {
+  try { const p = jwt.verify(req.query.t || '', JWT_SECRET); if (p.s !== 'dl' || String(p.aid) !== String(req.params.aid)) throw new Error('bad'); }
+  catch { return res.status(401).json({ error: 'Bad or expired download link' }); }
+  const a = db.prepare('SELECT * FROM attachments WHERE id=?').get(req.params.aid);
+  if (!a || a.storage_mode !== 'local' || !storage.existsLocal(a.storage_key)) return res.status(410).json({ error: 'File not available' });
+  res.setHeader('Content-Disposition', `attachment; filename="${String(a.filename || 'file').replace(/"/g, '')}"`);
+  if (a.content_type) res.setHeader('Content-Type', a.content_type);
+  storage.readLocalStream(a.storage_key).pipe(res);
+});
+
+// Remove an attachment record (admin/member).
+app.delete('/api/attachments/:aid', auth, requireRole('admin', 'member'), (req, res) => {
+  const a = db.prepare('SELECT * FROM attachments WHERE id=?').get(req.params.aid);
+  if (!a) return res.status(404).json({ error: 'Not found' });
+  db.prepare('DELETE FROM attachments WHERE id=?').run(a.id);
+  logEvent(a.sample_id, 'note', null, null, `Data file removed: ${a.filename}`, req.user.id);
+  res.json({ ok: true });
+});
+
+app.listen(PORT, () => console.log(`DESYtrack API + UI running on http://localhost:${PORT} [storage: ${storage.mode}]`));
