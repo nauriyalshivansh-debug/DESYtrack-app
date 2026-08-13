@@ -106,6 +106,30 @@
   .vis-internal{background:#3a2f20;color:#f0d79a}
   .dropzone{border:1px dashed var(--line);border-radius:10px;padding:14px;text-align:center;color:var(--muted);cursor:pointer;transition:border-color .2s,background .2s}
   .dropzone.hover{border-color:var(--accent);background:#17293b;color:var(--ink)}
+  /* ---- branded, role-aware login ---- */
+  .login-hero{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:32px 16px;
+    background:radial-gradient(1100px 560px at 18% -10%, #1c3a5e 0%, transparent 60%),
+      radial-gradient(900px 480px at 105% 110%, #12414a 0%, transparent 55%),
+      linear-gradient(160deg,#0b131c 0%,#0f1a26 100%)}
+  .login-box{width:100%;max-width:940px}
+  .login-top{text-align:center;margin-bottom:26px}
+  .login-top .wm{font-size:34px;font-weight:800;letter-spacing:.5px}
+  .login-top .wm span{color:var(--accent)}
+  .login-top .tag{color:var(--muted);margin-top:6px;font-size:15px}
+  .login-cols{display:grid;grid-template-columns:1.05fr 1.35fr;gap:22px;align-items:start}
+  @media(max-width:760px){.login-cols{grid-template-columns:1fr}}
+  .login-signin{background:rgba(23,33,46,.92);border:1px solid var(--line);border-radius:16px;padding:24px}
+  .login-signin h3{color:var(--ink);text-transform:none;letter-spacing:0;font-size:16px;margin:0 0 12px}
+  .role-grid{display:flex;flex-direction:column;gap:12px}
+  .role-card{display:flex;gap:13px;background:rgba(30,43,58,.72);border:1px solid var(--line);
+    border-radius:14px;padding:14px 16px;transition:transform .15s,border-color .15s}
+  .role-card:hover{transform:translateY(-2px);border-color:var(--accent)}
+  .role-card .ic{font-size:20px;flex:0 0 auto;width:42px;height:42px;display:flex;align-items:center;
+    justify-content:center;border-radius:11px;background:rgba(79,156,249,.12)}
+  .role-card h4{margin:0 0 3px;font-size:14px}
+  .role-card p{margin:0;font-size:12.5px;color:var(--muted);line-height:1.5}
+  .role-card .acc{display:inline-block;font-size:11px;margin-top:6px;padding:1px 8px;border-radius:12px;
+    background:rgba(43,182,115,.14);color:var(--accent2)}
 </style>
 </head>
 <body>
@@ -147,25 +171,47 @@ const STATUS_FILL = { received:'#6f8aa6', registered:'#6c7bd6', in_testing:'#d7b
   measured:'#4fb488', in_transit_return:'#b9924b', returned:'#5cb46f' };
 const fmtBytes = (n) => { n=+n||0; if(n<1024) return n+' B'; if(n<1048576) return (n/1024).toFixed(1)+' KB';
   if(n<1073741824) return (n/1048576).toFixed(1)+' MB'; return (n/1073741824).toFixed(2)+' GB'; };
+// Human-facing role names (backend codes stay admin/member/partner).
+const ROLE_LABEL = { admin:'Admin', member:'Beamline Staff', partner:'Industry Partner' };
+const roleLabel = (r) => ROLE_LABEL[r] || r;
 
 // ------------------------------------------------------------------
 // LOGIN
 // ------------------------------------------------------------------
 function renderLogin() {
   document.getElementById('app').innerHTML = '';
-  const wrap = el(`<div class="login-wrap card">
-    <div class="brand" style="font-size:20px;font-weight:700;margin-bottom:4px">DESY<span style="color:var(--accent)">track</span></div>
-    <div class="muted" style="margin-bottom:16px">Lab &amp; material sample tracking</div>
-    <label>Email</label><input id="email" placeholder="you@lab.test" autocomplete="username" />
-    <label>Password</label><input id="password" type="password" autocomplete="current-password" />
-    <div style="margin-top:16px"><button id="go" style="width:100%">Sign in</button></div>
-    <div class="err" id="loginErr"></div>
-  </div>`);
+  const wrap = el(`<div class="login-hero"><div class="login-box">
+    <div class="login-top">
+      <div class="wm">DESY<span>track</span></div>
+      <div class="tag">Sample custody &amp; tracking — from industry, through the beamline, and back.</div>
+    </div>
+    <div class="login-cols">
+      <div class="login-signin">
+        <h3>Sign in</h3>
+        <label>User ID</label><input id="userid" placeholder="your user ID" autocomplete="username" />
+        <label>Password</label><input id="password" type="password" autocomplete="current-password" />
+        <div style="margin-top:16px"><button id="go" style="width:100%">Sign in</button></div>
+        <div class="err" id="loginErr"></div>
+        <div class="hint" style="margin-top:14px">Your access depends on your role. Accounts are issued by your administrator.</div>
+      </div>
+      <div class="role-grid">
+        <div class="role-card"><div class="ic">🔬</div><div>
+          <h4>Beamline Staff</h4>
+          <p>Logs and edits samples, scans them through each station to advance the journey, records tests, and uploads beamline data files.</p>
+          <div class="acc">Full working access</div></div></div>
+        <div class="role-card"><div class="ic">🏭</div><div>
+          <h4>Industry Partner</h4>
+          <p>Follows only their own shared samples — live status, current location and shared data files. Read-only; never sees internal notes or other partners' samples.</p>
+          <div class="acc">Limited · read-only</div></div></div>
+      </div>
+    </div>
+  </div></div>`);
   document.getElementById('app').appendChild(wrap);
+  if($('#userid')) $('#userid').focus();
   const doLogin = async () => {
     $('#loginErr').textContent='';
     try {
-      const r = await api('/api/login', { method:'POST', body:{ email:$('#email').value, password:$('#password').value }});
+      const r = await api('/api/login', { method:'POST', body:{ username:$('#userid').value, password:$('#password').value }});
       state.token = r.token; state.user = r.user; state.publicUrl = r.publicUrl || '';
       state.statuses = await api('/api/statuses');
       renderApp();
@@ -183,7 +229,7 @@ function renderApp() {
   document.getElementById('app').innerHTML = '';
   const header = el(`<header>
     <div class="brand">DESY<span>track</span></div>
-    <div class="who">${esc(u.name)} · <span class="badge">${esc(u.role)}${u.organization?(' · '+esc(u.organization)):''}</span>
+    <div class="who">${esc(u.name)} · <span class="badge">${esc(roleLabel(u.role))}${u.organization?(' · '+esc(u.organization)):''}</span>
       <button class="ghost sm" id="logout" style="margin-left:10px">Sign out</button></div>
   </header>`);
   const main = el(`<main><div id="content"></div></main>`);
@@ -297,6 +343,7 @@ async function renderDetail(id) {
         ${field('Hazard class', s.hazard_class)}
         ${field('Custodian', s.custodian_name)}
         ${field('Received', s.received_at)}
+        ${field('Industry partner (owner)', s.owner_org)}
       </div>
       ${s.description?`<div style="margin-top:10px"><label>Description</label><div>${esc(s.description)}</div></div>`:''}
       ${internal && nexts.length?`<div style="margin-top:14px" class="row">
@@ -353,7 +400,7 @@ async function renderDetail(id) {
         ${internal?`<div style="flex:0 0 auto"><select id="cvis"><option value="shared">Shared</option><option value="internal">Internal only</option></select></div>`:''}
         <div style="flex:0 0 auto"><button id="postC">Post</button></div>
       </div>
-      ${internal?`<div style="margin-top:14px"><button class="ghost sm" id="mgAccess">Manage partner access</button></div>`:''}
+      ${internal?`<div style="margin-top:14px"><button class="ghost sm" id="mgAccess">Manage industry access</button></div>`:''}
     </div>`;
 
   $('#back').onclick = renderList;
@@ -757,7 +804,9 @@ function modal(inner){
   return { bg, close:()=>bg.remove() };
 }
 
-function sampleForm(s={}){
+function sampleForm(s={}, partnerOrgs=[]){
+  const owns = partnerOrgs.slice();
+  if(s.owner_org && !owns.includes(s.owner_org)) owns.push(s.owner_org);
   return `<div class="grid2">
     <div><label>Name *</label><input id="f_name" value="${esc(s.name)}"/></div>
     <div><label>Material type</label><input id="f_material_type" value="${esc(s.material_type)}"/></div>
@@ -767,6 +816,10 @@ function sampleForm(s={}){
     <div><label>Unit</label><input id="f_unit" value="${esc(s.unit)}"/></div>
     <div><label>Storage location</label><input id="f_storage_location" value="${esc(s.storage_location)}"/></div>
     <div><label>Hazard class</label><input id="f_hazard_class" value="${esc(s.hazard_class||'none')}"/></div>
+    <div><label>Industry partner (owner)</label>
+      <select id="f_owner_org"><option value="">— none / internal —</option>
+      ${owns.map(o=>`<option value="${esc(o)}" ${s.owner_org===o?'selected':''}>${esc(o)}</option>`).join('')}
+      </select></div>
   </div>
   <label>Description</label><textarea id="f_description" rows="2">${esc(s.description)}</textarea>`;
 }
@@ -774,11 +827,18 @@ function readSampleForm(){
   const g=(id)=>$('#'+id).value;
   return { name:g('f_name'), material_type:g('f_material_type'), batch_lot:g('f_batch_lot'),
     origin:g('f_origin'), quantity:g('f_quantity')?Number(g('f_quantity')):null, unit:g('f_unit'),
-    storage_location:g('f_storage_location'), hazard_class:g('f_hazard_class'), description:g('f_description') };
+    storage_location:g('f_storage_location'), hazard_class:g('f_hazard_class'),
+    owner_org:g('f_owner_org')||null, description:g('f_description') };
+}
+// Distinct industry-partner organizations, for the owner dropdown.
+async function partnerOrgs(){
+  try{ return [...new Set((await api('/api/users')).filter(u=>u.role==='partner'&&u.organization).map(u=>u.organization))]; }
+  catch(e){ return []; }
 }
 
-function openNewSample(){
-  const {close}=modal(`<h2>New sample</h2>${sampleForm()}<div class="err" id="e"></div>
+async function openNewSample(){
+  const orgs = await partnerOrgs();
+  const {close}=modal(`<h2>New sample</h2>${sampleForm({}, orgs)}<div class="err" id="e"></div>
     <div style="margin-top:16px;display:flex;gap:10px;justify-content:flex-end">
       <button class="ghost" id="cancel">Cancel</button><button id="save">Create</button></div>`);
   $('#cancel').onclick=close;
@@ -787,8 +847,9 @@ function openNewSample(){
     catch(e){ $('#e').textContent=e.message; }
   };
 }
-function openEditSample(s){
-  const {close}=modal(`<h2>Edit ${esc(s.sample_code)}</h2>${sampleForm(s)}<div class="err" id="e"></div>
+async function openEditSample(s){
+  const orgs = await partnerOrgs();
+  const {close}=modal(`<h2>Edit ${esc(s.sample_code)}</h2>${sampleForm(s, orgs)}<div class="err" id="e"></div>
     <div style="margin-top:16px;display:flex;gap:10px;justify-content:flex-end">
       <button class="ghost" id="cancel">Cancel</button><button id="save">Save</button></div>`);
   $('#cancel').onclick=close;
@@ -819,11 +880,11 @@ function openAddTest(id){
 async function openAccess(id){
   const [grants, users] = await Promise.all([ api('/api/samples/'+id+'/access'), api('/api/users') ]);
   const partners = users.filter(u=>u.role==='partner');
-  const {bg,close}=modal(`<h2>Partner access</h2>
+  const {bg,close}=modal(`<h2>Industry partner access</h2>
     <div id="glist">${grants.map(g=>`<div class="flex-between" style="padding:6px 0;border-bottom:1px solid var(--line)">
       <div>${esc(g.full_name)} <span class="muted">${esc(g.organization||'')}</span></div>
       <button class="sm ghost" data-rm="${g.user_id}">Remove</button></div>`).join('')||'<div class="muted">No partners have access.</div>'}</div>
-    <label>Grant access to partner</label>
+    <label>Grant access to an industry partner</label>
     <div class="row"><select id="pu" style="flex:3">${partners.map(p=>`<option value="${p.id}">${esc(p.full_name)} — ${esc(p.organization||'')}</option>`).join('')}</select>
     <button id="grant" style="flex:0 0 auto">Grant</button></div>
     <div style="margin-top:16px;text-align:right"><button class="ghost" id="done">Close</button></div>`);
@@ -836,27 +897,52 @@ async function openUsers(){
   const isAdmin = state.user.role==='admin';
   const {close}=modal(`<div class="flex-between"><h2 style="margin:0">Users</h2>
       <button class="sm ghost" id="printBadges">🖶 Print staff badges</button></div>
-    <table><thead><tr><th>Name</th><th>Role</th><th>Org</th><th></th></tr></thead><tbody>
-    ${users.map(u=>`<tr><td>${esc(u.full_name)}<div class="muted">${esc(u.email)}</div></td>
-      <td><span class="pill">${esc(u.role)}</span></td><td>${esc(u.organization||'—')}</td>
-      <td style="text-align:right">${u.role!=='partner'?`<button class="sm ghost" data-badge="${u.id}" data-name="${esc(u.full_name)}">Badge</button>`:''}</td></tr>`).join('')}
+    <table><thead><tr><th>Name</th><th>User ID</th><th>Role</th><th>Org</th><th></th></tr></thead><tbody>
+    ${users.map(u=>`<tr>
+      <td>${esc(u.full_name)}${u.email?`<div class="muted">${esc(u.email)}</div>`:''}</td>
+      <td><span class="pill">${esc(u.username||'—')}</span></td>
+      <td><span class="pill">${esc(roleLabel(u.role))}</span></td>
+      <td>${esc(u.organization||'—')}</td>
+      <td style="text-align:right;white-space:nowrap">
+        ${u.role!=='partner'?`<button class="sm ghost" data-badge="${u.id}" data-name="${esc(u.full_name)}">Badge</button>`:''}
+        ${isAdmin?`<button class="sm ghost" data-pw="${u.id}" data-name="${esc(u.full_name)}">Reset PW</button>`:''}
+      </td></tr>`).join('')}
     </tbody></table>
-    ${isAdmin?`<h3>Add user</h3>
+    ${isAdmin?`<h3>Onboard a user</h3>
+    <div class="muted" style="font-size:12px;margin:-4px 0 8px">Give the person their User ID and a temporary password — they can sign in immediately and you can reset it any time.</div>
     <div class="grid2">
-      <div><label>Full name</label><input id="u_name"/></div>
-      <div><label>Email</label><input id="u_email"/></div>
-      <div><label>Password</label><input id="u_pw" type="password"/></div>
-      <div><label>Role</label><select id="u_role"><option value="member">member</option><option value="admin">admin</option><option value="partner">partner</option></select></div>
-      <div><label>Organization (partners)</label><input id="u_org"/></div>
+      <div><label>User ID *</label><input id="u_username" placeholder="e.g. acme-jones"/></div>
+      <div><label>Full name *</label><input id="u_name"/></div>
+      <div><label>Temporary password *</label><input id="u_pw" type="password"/></div>
+      <div><label>Role</label><select id="u_role"><option value="partner">Industry Partner</option><option value="member">Beamline Staff</option><option value="admin">Admin</option></select></div>
+      <div><label>Organization (for partners)</label><input id="u_org"/></div>
+      <div><label>Email (optional)</label><input id="u_email"/></div>
     </div><div class="err" id="e"></div>
-    <div style="margin-top:12px;text-align:right"><button id="addU">Create user</button></div>`:''}
+    <div style="margin-top:12px;text-align:right"><button id="addU">Create account</button></div>`:''}
     <div style="margin-top:14px;text-align:right"><button class="ghost" id="done">Close</button></div>`);
   $('#done').onclick=close;
   if($('#printBadges')) $('#printBadges').onclick=()=>printAllBadges(users.filter(u=>u.role!=='partner'));
   document.querySelectorAll('[data-badge]').forEach(b=>b.onclick=()=>printBadge(Number(b.dataset.badge), b.dataset.name));
+  document.querySelectorAll('[data-pw]').forEach(b=>b.onclick=()=>openResetPw(b.dataset.pw, b.dataset.name));
   if($('#addU')) $('#addU').onclick=async()=>{
-    try{ await api('/api/users',{method:'POST',body:{ full_name:$('#u_name').value, email:$('#u_email').value,
-      password:$('#u_pw').value, role:$('#u_role').value, organization:$('#u_org').value }}); close(); openUsers(); }
+    try{ await api('/api/users',{method:'POST',body:{ username:$('#u_username').value, full_name:$('#u_name').value,
+      email:$('#u_email').value||null, password:$('#u_pw').value, role:$('#u_role').value, organization:$('#u_org').value }});
+      close(); openUsers(); }
+    catch(e){ $('#e').textContent=e.message; }
+  };
+}
+
+function openResetPw(id, name){
+  const {close}=modal(`<h2>Reset password</h2>
+    <div class="muted" style="margin-bottom:10px">Set a new password for <b>${esc(name)}</b> — tell them the new one and they can sign in with it straight away.</div>
+    <label>New password</label><input id="np" type="password" autocomplete="new-password"/>
+    <div class="err" id="e"></div>
+    <div style="margin-top:16px;display:flex;gap:10px;justify-content:flex-end">
+      <button class="ghost" id="cancel">Cancel</button><button id="save">Set password</button></div>`);
+  $('#cancel').onclick=close;
+  $('#save').onclick=async()=>{
+    if(!$('#np').value){ $('#e').textContent='Enter a new password.'; return; }
+    try{ await api('/api/users/'+id+'/password',{method:'POST',body:{password:$('#np').value}}); close(); }
     catch(e){ $('#e').textContent=e.message; }
   };
 }

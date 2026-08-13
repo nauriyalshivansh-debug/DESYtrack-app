@@ -19,6 +19,8 @@ db.exec(schema);
 for (const ddl of [
   'ALTER TABLE samples ADD COLUMN current_location TEXT',
   'ALTER TABLE samples ADD COLUMN current_station TEXT',
+  'ALTER TABLE samples ADD COLUMN owner_org TEXT',
+  'ALTER TABLE users ADD COLUMN username TEXT',
 ]) { try { db.exec(ddl); } catch (e) { /* column already present */ } }
 
 // ---- Seed status workflow (idempotent) ----
@@ -93,11 +95,11 @@ const userCount = db.prepare('SELECT COUNT(*) n FROM users').get().n;
 if (userCount === 0) {
   const hash = (pw) => bcrypt.hashSync(pw, 10);
   const insUser = db.prepare(
-    `INSERT INTO users(email,full_name,password_hash,role,organization)
-     VALUES (?,?,?,?,?)`);
-  const admin  = insUser.run('admin@lab.test',   'Ana Admin',   hash('admin123'),  'admin',  null).lastInsertRowid;
-  const member = insUser.run('tech@lab.test',    'Tom Tech',    hash('member123'), 'member', null).lastInsertRowid;
-  const partner= insUser.run('partner@acme.test','Pat Partner', hash('partner123'),'partner','Acme Materials Co.').lastInsertRowid;
+    `INSERT INTO users(username,email,full_name,password_hash,role,organization)
+     VALUES (?,?,?,?,?,?)`);
+  const admin  = insUser.run('admin',    'admin@lab.test',   'Ana Admin',   hash('admin123'),  'admin',  null).lastInsertRowid;
+  const member = insUser.run('beamline', 'tech@lab.test',    'Tom Tech',    hash('member123'), 'member', null).lastInsertRowid;
+  const partner= insUser.run('acme',     'partner@acme.test','Pat Partner', hash('partner123'),'partner','Acme Materials Co.').lastInsertRowid;
 
   const insSample = db.prepare(
     `INSERT INTO samples(sample_code,name,description,material_type,batch_lot,origin,
@@ -142,6 +144,9 @@ if (userCount === 0) {
   setLoc.run('STN-TESTING',   'Lab 2 · Bench A',       s1);
   setLoc.run('STN-QA',        'Lab 3 · QA Desk',       s2);
   setLoc.run('STN-RECEIVING', 'Intake Room · Bench 1', s3);
+
+  // Sample 1 is owned by the Acme partner — they see it automatically by ownership.
+  db.prepare('UPDATE samples SET owner_org=? WHERE id=?').run('Acme Materials Co.', s1);
 
   insTest.run(s2,'tensile','ASTM D638','310','MPa','pass',member,now);
   insTest.run(s2,'hardness','HRB','60','HRB','pass',member,now);

@@ -9,7 +9,8 @@ PRAGMA foreign_keys = ON;
 
 CREATE TABLE IF NOT EXISTS users (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
-  email         TEXT    NOT NULL UNIQUE,
+  username      TEXT    UNIQUE,            -- login User ID, issued by an admin
+  email         TEXT    UNIQUE,            -- optional contact address
   full_name     TEXT    NOT NULL,
   password_hash TEXT    NOT NULL,
   -- role governs global capability. 'partner' = external, sees only shared samples.
@@ -63,6 +64,7 @@ CREATE TABLE IF NOT EXISTS samples (
   unit           TEXT,                        -- 'g', 'mL', 'pcs'
   storage_location TEXT,                      -- freezer/shelf/bin
   hazard_class   TEXT,                        -- GHS class or 'none'
+  owner_org      TEXT,                        -- industry partner (company) that sent/owns this sample
   status         TEXT    NOT NULL DEFAULT 'received'
                          REFERENCES statuses(code),
   -- where the sample physically is right now (set by the last station scan)
