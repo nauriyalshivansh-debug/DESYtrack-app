@@ -2,8 +2,15 @@
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<link rel="icon" href="data:," />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#0f1720" />
+<link rel="icon" href="/icon-192.png" />
+<link rel="manifest" href="/manifest.json" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="DESYtrack" />
+<link rel="apple-touch-icon" href="/icon-192.png" />
 <title>DESYtrack — Lab Sample Tracking</title>
 <style>
   :root{
@@ -130,6 +137,16 @@
   .role-card p{margin:0;font-size:12.5px;color:var(--muted);line-height:1.5}
   .role-card .acc{display:inline-block;font-size:11px;margin-top:6px;padding:1px 8px;border-radius:12px;
     background:rgba(43,182,115,.14);color:var(--accent2)}
+  /* ---- live board ---- */
+  .board{display:flex;gap:12px;overflow-x:auto;padding-bottom:10px;align-items:flex-start}
+  .bcol{flex:0 0 240px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px;max-height:74vh;overflow-y:auto}
+  .bcol h4{margin:0 0 8px;font-size:13px;display:flex;justify-content:space-between;align-items:center;gap:8px;position:sticky;top:0;background:var(--panel)}
+  .bcard{background:var(--panel2);border:1px solid var(--line);border-radius:9px;padding:9px 10px;margin-bottom:8px;cursor:pointer;transition:border-color .15s,transform .15s}
+  .bcard:hover{border-color:var(--accent);transform:translateY(-1px)}
+  .bcard .c{font-weight:700;font-size:12px}
+  .bcard .m{font-size:11px;color:var(--muted);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .live-dot{width:8px;height:8px;border-radius:50%;background:var(--accent2);display:inline-block;margin-right:5px;animation:pulse 1.6s infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
 </style>
 </head>
 <body>
@@ -234,7 +251,7 @@ function renderApp() {
   </header>`);
   const main = el(`<main><div id="content"></div></main>`);
   document.getElementById('app').append(header, main);
-  $('#logout').onclick = ()=>{ state.token=null; state.user=null; renderLogin(); };
+  $('#logout').onclick = ()=>{ stopBoard(); state.token=null; state.user=null; renderLogin(); };
   renderList();
   // Deep link: /?code=SMP-... (e.g. a QR that encodes a full URL) opens that sample.
   try{
@@ -248,6 +265,7 @@ function renderApp() {
 // SAMPLE LIST + DASHBOARD
 // ------------------------------------------------------------------
 async function renderList() {
+  stopBoard();
   const c = $('#content');
   const internal = state.user.role!=='partner';
   c.innerHTML = '<div class="muted">Loading…</div>';
@@ -277,15 +295,19 @@ async function renderList() {
           ${state.statuses.map(s=>`<option value="${s.code}">${esc(s.label)}</option>`).join('')}</select>
         ${internal?'<button id="new">+ New sample</button>':''}
         <button class="ghost" id="scan">⛶ Scan</button>
+        ${internal?'<button class="ghost" id="board">📺 Live board</button>':''}
         <div style="flex:1"></div>
         ${internal?'<button class="ghost" id="stations">Stations</button>':''}
+        ${internal?'<button class="ghost" id="printLabels">🖶 Labels</button>':''}
         ${internal?'<button class="ghost" id="mgUsers">Users</button>':''}
       </div>
       <table><thead><tr><th>Code</th><th>Name</th><th>Status</th><th>Location</th><th>Custodian</th><th>Updated</th></tr></thead>
       <tbody id="rows"></tbody></table>
     </div>`;
 
+  let listedSamples = samples;
   const draw = (list) => {
+    listedSamples = list;
     $('#rows').innerHTML = list.map(s=>`<tr class="click" data-id="${s.id}">
       <td><span class="pill">${esc(s.sample_code)}</span></td>
       <td>${esc(s.name)}</td>
@@ -308,6 +330,8 @@ async function renderList() {
   if($('#new')) $('#new').onclick = openNewSample;
   if($('#mgUsers')) $('#mgUsers').onclick = openUsers;
   if($('#stations')) $('#stations').onclick = renderStations;
+  if($('#board')) $('#board').onclick = renderBoard;
+  if($('#printLabels')) $('#printLabels').onclick = ()=>printSampleLabels(listedSamples);
   if($('#scan')) $('#scan').onclick = openScan;
 }
 
@@ -331,7 +355,7 @@ async function renderDetail(id) {
     <div class="card">
       <div class="flex-between">
         <div><h2>${esc(s.name)}</h2><div class="muted">${esc(s.sample_code)}</div></div>
-        ${internal?`<div><button class="sm ghost" id="edit">Edit</button></div>`:''}
+        ${internal?`<div style="display:flex;gap:8px"><button class="sm ghost" id="edit">Edit</button>${state.user.role==='admin'?`<button class="sm ghost" id="del">Delete</button>`:''}</div>`:''}
       </div>
       <div class="grid2" style="margin-top:12px">
         ${field('Material type', s.material_type)}
@@ -405,6 +429,10 @@ async function renderDetail(id) {
 
   $('#back').onclick = renderList;
   if($('#edit')) $('#edit').onclick = ()=>openEditSample(s);
+  if($('#del')) $('#del').onclick = async ()=>{
+    if(!confirm('Delete '+s.sample_code+' and all its history? This cannot be undone.')) return;
+    try{ await api('/api/samples/'+id,{method:'DELETE'}); renderList(); }catch(e){ alert(e.message); }
+  };
   if($('#advance')) $('#advance').onclick = async ()=>{
     await api('/api/samples/'+id+'/status',{method:'POST',body:{to:$('#toStatus').value,note:$('#stNote').value}});
     renderDetail(id);
@@ -429,8 +457,8 @@ async function renderDetail(id) {
     const svg = qr.createSvgTag({ cellSize: 8, margin: 1 });
     const w = window.open('', '_blank', 'width=380,height=460');
     w.document.write(`<html><head><title>${esc(s.sample_code)}</title>
-      <style>body{font-family:sans-serif;text-align:center;margin:24px}
-      h2{font-size:18px;margin:12px 0 2px} .n{color:#444;font-size:13px}</style></head>
+      <style>@page{margin:10mm} body{font-family:sans-serif;text-align:center;margin:0;padding:16px}
+      svg{width:50mm;height:50mm} h2{font-size:16px;margin:8px 0 2px} .n{color:#444;font-size:12px}</style></head>
       <body>${svg}<h2>${esc(s.sample_code)}</h2><div class="n">${esc(s.name)}</div>
       <scr`+`ipt>window.onload=function(){window.print();}</scr`+`ipt></body></html>`);
     w.document.close();
@@ -621,6 +649,45 @@ function openScanOpen(){
 }
 
 // ------------------------------------------------------------------
+// LIVE BOARD — samples grouped by stage, auto-refreshing
+// ------------------------------------------------------------------
+function stopBoard(){ if(state.boardTimer){ clearInterval(state.boardTimer); state.boardTimer=null; } }
+async function renderBoard(){
+  stopBoard();
+  const c = $('#content');
+  const paint = async () => {
+    let samples;
+    try{ samples = await api('/api/samples'); }catch(e){ return; }
+    const by = {};
+    samples.forEach(s => { (by[s.status] = by[s.status] || []).push(s); });
+    const cols = state.statuses.filter(st => by[st.code] && by[st.code].length);
+    const now = new Date().toLocaleTimeString();
+    c.innerHTML = `
+      <div class="flex-between" style="margin-bottom:10px">
+        <button class="ghost sm" id="back">← All samples</button>
+        <div class="muted" style="font-size:12px"><span class="live-dot"></span>Live · updates every 5s · ${esc(now)}</div>
+      </div>
+      ${cols.length ? `<div class="board">${cols.map(st => {
+        const list = by[st.code];
+        return `<div class="bcol">
+          <h4><span class="status ${statusClass(st.code)}">${esc(st.label)}</span><span class="muted">${list.length}</span></h4>
+          ${list.map(s => `<div class="bcard" data-id="${s.id}">
+            <div class="c">${esc(s.sample_code)}</div>
+            <div class="m">${esc(s.name)}</div>
+            <div class="m">📍 ${esc(s.current_location || '—')}</div>
+            <div class="m">${esc(s.custodian_name || '—')}${s.owner_org ? (' · ' + esc(s.owner_org)) : ''}</div>
+          </div>`).join('')}
+        </div>`;
+      }).join('')}</div>` : '<div class="card muted">No samples to show yet.</div>'}`;
+    $('#back').onclick = () => { stopBoard(); renderList(); };
+    c.querySelectorAll('.bcard').forEach(b => b.onclick = () => { stopBoard(); renderDetail(b.dataset.id); });
+  };
+  c.innerHTML = '<div class="muted">Loading…</div>';
+  await paint();
+  state.boardTimer = setInterval(paint, 5000);
+}
+
+// ------------------------------------------------------------------
 // DATA FILES (attachments)
 // ------------------------------------------------------------------
 async function renderFiles(id, internal){
@@ -725,6 +792,23 @@ async function renderStations(){
   if($('#addStn')) $('#addStn').onclick = ()=>openStationForm();
   if($('#printAll')) $('#printAll').onclick = ()=>printAllStations(stations);
 }
+// Bulk-print QR labels for many samples — a grid, many per page, sticker-sized.
+function printSampleLabels(list){
+  if(!list || !list.length){ alert('No samples to print.'); return; }
+  const cells = list.map(s=>{ const qr=qrcode(0,'M'); qr.addData(qrPayload(s.sample_code)); qr.make();
+    return `<div class="lbl">${qr.createSvgTag({cellSize:4,margin:0})}<div class="cd">${esc(s.sample_code)}</div><div class="nm">${esc(s.name)}</div></div>`; }).join('');
+  const w=window.open('','_blank','width=900,height=1000'); if(!w) return;
+  w.document.write(`<html><head><title>Sample QR labels (${list.length})</title>
+    <style>@page{margin:10mm} body{font-family:sans-serif;margin:0;padding:8mm}
+    .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:6mm}
+    .lbl{border:1px solid #ccc;border-radius:6px;padding:6px;text-align:center;break-inside:avoid;page-break-inside:avoid}
+    .lbl svg{width:34mm;height:34mm}
+    .cd{font-weight:bold;font-size:11px;margin-top:3px}
+    .nm{font-size:9px;color:#555;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}</style></head>
+    <body><div class="grid">${cells}</div>
+    <scr`+`ipt>window.onload=function(){window.print();}</scr`+`ipt></body></html>`);
+  w.document.close();
+}
 function printStation(st, qr){
   const svg = qr.createSvgTag({cellSize:8,margin:1});
   const w = window.open('','_blank','width=430,height=580'); if(!w) return;
@@ -804,7 +888,7 @@ function modal(inner){
   return { bg, close:()=>bg.remove() };
 }
 
-function sampleForm(s={}, partnerOrgs=[]){
+function sampleForm(s={}, partnerOrgs=[], staff=[]){
   const owns = partnerOrgs.slice();
   if(s.owner_org && !owns.includes(s.owner_org)) owns.push(s.owner_org);
   return `<div class="grid2">
@@ -816,6 +900,10 @@ function sampleForm(s={}, partnerOrgs=[]){
     <div><label>Unit</label><input id="f_unit" value="${esc(s.unit)}"/></div>
     <div><label>Storage location</label><input id="f_storage_location" value="${esc(s.storage_location)}"/></div>
     <div><label>Hazard class</label><input id="f_hazard_class" value="${esc(s.hazard_class||'none')}"/></div>
+    <div><label>Custodian (who holds it)</label>
+      <select id="f_custodian_id"><option value="">— unassigned —</option>
+      ${staff.map(u=>`<option value="${u.id}" ${String(s.custodian_id)===String(u.id)?'selected':''}>${esc(u.full_name)}</option>`).join('')}
+      </select></div>
     <div><label>Industry partner (owner)</label>
       <select id="f_owner_org"><option value="">— none / internal —</option>
       ${owns.map(o=>`<option value="${esc(o)}" ${s.owner_org===o?'selected':''}>${esc(o)}</option>`).join('')}
@@ -828,17 +916,20 @@ function readSampleForm(){
   return { name:g('f_name'), material_type:g('f_material_type'), batch_lot:g('f_batch_lot'),
     origin:g('f_origin'), quantity:g('f_quantity')?Number(g('f_quantity')):null, unit:g('f_unit'),
     storage_location:g('f_storage_location'), hazard_class:g('f_hazard_class'),
+    custodian_id:g('f_custodian_id')?Number(g('f_custodian_id')):null,
     owner_org:g('f_owner_org')||null, description:g('f_description') };
 }
-// Distinct industry-partner organizations, for the owner dropdown.
-async function partnerOrgs(){
-  try{ return [...new Set((await api('/api/users')).filter(u=>u.role==='partner'&&u.organization).map(u=>u.organization))]; }
-  catch(e){ return []; }
+// Load users once → partner orgs (owner dropdown) + internal staff (custodian dropdown).
+async function formPeople(){
+  try{ const us=await api('/api/users');
+    return { orgs:[...new Set(us.filter(u=>u.role==='partner'&&u.organization).map(u=>u.organization))],
+             staff:us.filter(u=>u.role!=='partner') }; }
+  catch(e){ return { orgs:[], staff:[] }; }
 }
 
 async function openNewSample(){
-  const orgs = await partnerOrgs();
-  const {close}=modal(`<h2>New sample</h2>${sampleForm({}, orgs)}<div class="err" id="e"></div>
+  const {orgs,staff} = await formPeople();
+  const {close}=modal(`<h2>New sample</h2>${sampleForm({}, orgs, staff)}<div class="err" id="e"></div>
     <div style="margin-top:16px;display:flex;gap:10px;justify-content:flex-end">
       <button class="ghost" id="cancel">Cancel</button><button id="save">Create</button></div>`);
   $('#cancel').onclick=close;
@@ -848,8 +939,8 @@ async function openNewSample(){
   };
 }
 async function openEditSample(s){
-  const orgs = await partnerOrgs();
-  const {close}=modal(`<h2>Edit ${esc(s.sample_code)}</h2>${sampleForm(s, orgs)}<div class="err" id="e"></div>
+  const {orgs,staff} = await formPeople();
+  const {close}=modal(`<h2>Edit ${esc(s.sample_code)}</h2>${sampleForm(s, orgs, staff)}<div class="err" id="e"></div>
     <div style="margin-top:16px;display:flex;gap:10px;justify-content:flex-end">
       <button class="ghost" id="cancel">Cancel</button><button id="save">Save</button></div>`);
   $('#cancel').onclick=close;
@@ -949,6 +1040,10 @@ function openResetPw(id, name){
 
 // boot
 renderLogin();
+// Register the service worker so the site is installable as an app.
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(()=>{}));
+}
 </script>
 </body>
 </html>
