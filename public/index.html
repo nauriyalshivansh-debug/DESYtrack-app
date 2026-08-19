@@ -302,7 +302,7 @@ async function renderList() {
         ${internal?'<button class="ghost" id="printLabels">🖶 Labels</button>':''}
         ${internal?'<button class="ghost" id="mgUsers">Users</button>':''}
       </div>
-      <table><thead><tr><th>Code</th><th>Name</th><th>Status</th><th>Location</th><th>Custodian</th><th>Updated</th></tr></thead>
+      <table><thead><tr><th style="width:26px"><input type="checkbox" id="chkall" title="Select all"/></th><th>Code</th><th>Name</th><th>Status</th><th>Location</th><th>Custodian</th><th>Updated</th></tr></thead>
       <tbody id="rows"></tbody></table>
     </div>`;
 
@@ -310,14 +310,16 @@ async function renderList() {
   const draw = (list) => {
     listedSamples = list;
     $('#rows').innerHTML = list.map(s=>`<tr class="click" data-id="${s.id}">
+      <td><input type="checkbox" class="rowchk" data-id="${s.id}"/></td>
       <td><span class="pill">${esc(s.sample_code)}</span></td>
       <td>${esc(s.name)}</td>
       <td><span class="status ${statusClass(s.status)}">${esc(s.status_label)}</span></td>
       <td class="muted">${esc(s.current_location||'—')}</td>
       <td>${esc(s.custodian_name||'—')}</td>
       <td class="muted">${esc((s.updated_at||'').slice(0,10))}</td></tr>`).join('')
-      || '<tr><td colspan="6" class="muted">No matching samples.</td></tr>';
+      || '<tr><td colspan="7" class="muted">No matching samples.</td></tr>';
     document.querySelectorAll('#rows tr.click').forEach(tr=>tr.onclick=()=>renderDetail(tr.dataset.id));
+    document.querySelectorAll('#rows .rowchk').forEach(cb=>cb.onclick=(e)=>e.stopPropagation());
   };
   draw(samples);
 
@@ -333,7 +335,11 @@ async function renderList() {
   if($('#stations')) $('#stations').onclick = renderStations;
   if($('#board')) $('#board').onclick = renderBoard;
   if($('#move')) $('#move').onclick = openManualMove;
-  if($('#printLabels')) $('#printLabels').onclick = ()=>printSampleLabels(listedSamples);
+  if($('#chkall')) $('#chkall').onchange = ()=>document.querySelectorAll('#rows .rowchk').forEach(cb=>cb.checked=$('#chkall').checked);
+  if($('#printLabels')) $('#printLabels').onclick = ()=>{
+    const ids=[...document.querySelectorAll('#rows .rowchk:checked')].map(cb=>Number(cb.dataset.id));
+    printSampleLabels(ids.length ? listedSamples.filter(s=>ids.includes(s.id)) : listedSamples);
+  };
   if($('#scan')) $('#scan').onclick = openScan;
 }
 
@@ -769,6 +775,7 @@ async function renderStations(){
       <button class="ghost sm" id="back">← All samples</button>
       <div style="display:flex;gap:8px">
         ${isAdmin?'<button class="sm" id="addStn">+ Add spot</button>':''}
+        <button class="sm ghost" id="printSel">🖶 Print selected</button>
         <button class="sm ghost" id="printAll">🖶 Print all</button>
       </div>
     </div>
@@ -781,6 +788,7 @@ async function renderStations(){
   const box = $('#stnCards');
   stations.forEach(st=>{
     const card = el(`<div class="stn-card">
+      <label style="display:block;text-align:left;font-size:11px;color:var(--muted);margin-bottom:4px"><input type="checkbox" class="stnchk" data-code="${esc(st.code)}"/> select</label>
       <div class="qr"></div>
       <h4>${esc(st.label)}</h4>
       <div class="muted" style="font-size:12px">${esc(st.location)}</div>
@@ -794,6 +802,10 @@ async function renderStations(){
     box.appendChild(card);
   });
   if($('#addStn')) $('#addStn').onclick = ()=>openStationForm();
+  if($('#printSel')) $('#printSel').onclick = ()=>{
+    const codes=[...document.querySelectorAll('.stnchk:checked')].map(cb=>cb.dataset.code);
+    printAllStations(codes.length ? stations.filter(s=>codes.includes(s.code)) : stations);
+  };
   if($('#printAll')) $('#printAll').onclick = ()=>printAllStations(stations);
 }
 // Bulk-print QR labels for many samples — a grid, many per page, sticker-sized.
