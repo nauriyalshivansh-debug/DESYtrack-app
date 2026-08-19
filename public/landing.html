@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<script>(function(){try{if(/[?&]code=/.test(location.search)){location.replace("/app/"+location.search);}}catch(e){}})();</script>
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>iFuelTracker — From the bench to the beam</title>
+<meta name="description" content="iFuelTracker follows research materials through the full industry-to-synchrotron journey at DESY PETRA III — scanned at every station, custody logged, monitored live." />
+<meta name="theme-color" content="#05070c" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --bg:#05070c; --bg2:#080b12; --panel:#0c1119; --panel2:#0f1622;
+    --line:rgba(255,255,255,.07); --line2:rgba(255,255,255,.14);
+    --ink:#f4f7fb; --muted:#9aa7b8; --faint:#5b6675;
+    --cyan:#4fd6ff; --cyan2:#38b6ff; --violet:#8b7bff; --amber:#ffc46b;
+    --disp:'Space Grotesk',system-ui,sans-serif;
+    --body:'Inter',system-ui,-apple-system,sans-serif;
+    --mono:'JetBrains Mono',ui-monospace,Menlo,monospace;
+    --maxw:1240px; --ease:cubic-bezier(.16,1,.3,1);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+  body{background:var(--bg);color:var(--ink);font-family:var(--body);line-height:1.6;
+    -webkit-font-smoothing:antialiased;overflow-x:hidden;font-weight:400}
+  a{color:inherit;text-decoration:none}
+  h1,h2,h3,h4{font-family:var(--disp);font-weight:600;line-height:1.05;letter-spacing:-.025em}
+  .wrap{max-width:var(--maxw);margin:0 auto;padding:0 clamp(20px,5vw,56px)}
+  .eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.28em;text-transform:uppercase;color:var(--cyan);font-weight:500}
+  .mono{font-family:var(--mono)}
+  ::selection{background:rgba(79,214,255,.25);color:#fff}
+
+  /* progress bar */
+  .prog{position:fixed;top:0;left:0;height:2px;width:0;z-index:200;
+    background:linear-gradient(90deg,var(--cyan),var(--violet));box-shadow:0 0 12px var(--cyan)}
+
+  /* nav */
+  header.nav{position:fixed;top:0;left:0;right:0;z-index:100;transition:background .4s var(--ease),border-color .4s,backdrop-filter .4s;border-bottom:1px solid transparent}
+  header.nav.solid{background:rgba(5,7,12,.72);backdrop-filter:blur(18px) saturate(140%);border-bottom:1px solid var(--line)}
+  .nav .wrap{display:flex;align-items:center;gap:24px;height:72px}
+  .brand{display:flex;align-items:center;gap:12px;font-family:var(--disp);font-weight:700;font-size:19px;letter-spacing:-.02em}
+  .brand b{color:var(--cyan)} .brand svg{width:30px;height:30px}
+  .nav nav{margin-left:auto;display:flex;gap:34px;align-items:center}
+  .nav nav a.lnk{color:var(--muted);font-size:14px;font-weight:450;letter-spacing:.01em;transition:color .25s;position:relative}
+  .nav nav a.lnk:hover{color:var(--ink)}
+  .nav nav a.lnk::after{content:"";position:absolute;left:0;right:100%;bottom:-6px;height:1px;background:var(--cyan);transition:right .3s var(--ease)}
+  .nav nav a.lnk:hover::after{right:0}
+  .btn{display:inline-flex;align-items:center;gap:9px;border-radius:100px;font-weight:500;font-family:var(--body);
+    font-size:14px;padding:11px 22px;cursor:pointer;border:1px solid var(--line2);transition:.3s var(--ease);white-space:nowrap;letter-spacing:.01em}
+  .btn.primary{background:var(--ink);color:#05070c;border-color:var(--ink);font-weight:600}
+  .btn.primary:hover{background:var(--cyan);border-color:var(--cyan);transform:translateY(-1px);box-shadow:0 12px 34px -10px rgba(79,214,255,.6)}
+  .btn.ghost{background:rgba(255,255,255,.03);color:var(--ink)}
+  .btn.ghost:hover{border-color:var(--cyan);color:var(--cyan);background:rgba(79,214,255,.06)}
+  .btn.lg{padding:15px 30px;font-size:15.5px}
+  .navtoggle{display:none;margin-left:auto;background:rgba(255,255,255,.03);border:1px solid var(--line2);border-radius:10px;color:var(--ink);width:44px;height:40px;cursor:pointer;font-size:18px}
+
+  /* HERO */
+  .hero{position:relative;min-height:100svh;display:flex;align-items:center;overflow:hidden}
+  #ring{position:absolute;inset:0;width:100%;height:100%;z-index:0}
+  .hero::after{content:"";position:absolute;inset:0;z-index:1;pointer-events:none;
+    background:radial-gradient(120% 90% at 50% 8%,transparent 40%,rgba(5,7,12,.4) 78%,var(--bg) 100%),
+               linear-gradient(180deg,rgba(5,7,12,.55) 0%,transparent 22%)}
+  .hero .wrap{position:relative;z-index:2;width:100%;padding-top:100px;padding-bottom:56px}
+  .hero .eyebrow{opacity:0;animation:rise .9s var(--ease) .15s forwards}
+  .hero h1{font-size:clamp(44px,8.4vw,104px);font-weight:600;margin:22px 0 0;max-width:16ch;opacity:0;animation:rise 1s var(--ease) .28s forwards}
+  .hero h1 em{font-style:normal;background:linear-gradient(115deg,var(--cyan),var(--violet) 60%,var(--amber));-webkit-background-clip:text;background-clip:text;color:transparent}
+  .hero .lede{font-size:clamp(16px,1.6vw,20px);font-weight:350;color:var(--muted);max-width:52ch;margin:26px 0 0;opacity:0;animation:rise 1s var(--ease) .42s forwards}
+  .hero .cta-row{display:flex;flex-wrap:wrap;gap:14px;margin-top:38px;opacity:0;animation:rise 1s var(--ease) .56s forwards}
+  @keyframes rise{from{opacity:0;transform:translateY(26px)}to{opacity:1;transform:none}}
+
+  .hstats{position:absolute;left:0;right:0;bottom:0;z-index:2;border-top:1px solid var(--line);
+    background:linear-gradient(180deg,transparent,rgba(5,7,12,.5))}
+  .hstats .wrap{display:flex;flex-wrap:wrap;gap:14px 48px;align-items:center;padding-top:20px;padding-bottom:20px}
+  .hstats .st{display:flex;flex-direction:column}
+  .hstats .st b{font-family:var(--disp);font-size:clamp(19px,2.4vw,26px);font-weight:600;line-height:1}
+  .hstats .st span{font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);margin-top:7px}
+  .hstats .scrollcue{margin-left:auto;display:flex;align-items:center;gap:10px;color:var(--faint);font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase}
+  .hstats .scrollcue .m{width:22px;height:34px;border:1px solid var(--line2);border-radius:12px;position:relative}
+  .hstats .scrollcue .m::after{content:"";position:absolute;left:50%;top:7px;width:3px;height:6px;background:var(--cyan);border-radius:2px;transform:translateX(-50%);animation:cue 1.7s var(--ease) infinite}
+  @keyframes cue{0%{opacity:0;transform:translate(-50%,0)}30%{opacity:1}100%{opacity:0;transform:translate(-50%,12px)}}
+
+  /* SECTION scaffolding */
+  section.blk{position:relative;padding:clamp(88px,13vh,150px) 0}
+  .alt{background:linear-gradient(180deg,var(--bg2),var(--bg))}
+  .sec-head{max-width:720px;margin-bottom:64px}
+  .sec-head h2{font-size:clamp(30px,5vw,58px);font-weight:600;margin-top:16px}
+  .sec-head p{color:var(--muted);font-weight:350;margin-top:20px;font-size:clamp(16px,1.6vw,19px);max-width:60ch}
+
+  /* JOURNEY */
+  .journey{position:relative}
+  .track{position:relative;margin-top:16px}
+  .track .rail{position:absolute;left:calc(7.14% );right:calc(7.14%);top:34px;height:2px;background:var(--line2);border-radius:2px}
+  .track .fill{position:absolute;left:7.14%;top:34px;height:2px;width:0;border-radius:2px;
+    background:linear-gradient(90deg,var(--cyan),var(--violet),var(--amber));box-shadow:0 0 14px rgba(79,214,255,.5);transition:width .1s linear}
+  .stages{display:grid;grid-template-columns:repeat(7,1fr)}
+  .stage{text-align:center;padding:0 10px;position:relative}
+  .stage .node{width:70px;height:70px;margin:0 auto;border-radius:50%;display:grid;place-items:center;position:relative;z-index:3;
+    background:radial-gradient(circle at 32% 28%,var(--panel2),var(--panel));border:1px solid var(--line2);transition:.35s var(--ease)}
+  .stage.on .node{border-color:var(--cyan);box-shadow:0 0 0 5px rgba(79,214,255,.08),0 0 34px -6px rgba(79,214,255,.6)}
+  .stage .node svg{width:28px;height:28px;stroke:var(--muted);fill:none;stroke-width:1.6;transition:stroke .35s}
+  .stage.on .node svg{stroke:var(--cyan)}
+  .stage .num{font-family:var(--mono);font-size:11px;color:var(--faint);margin-top:16px;letter-spacing:.1em}
+  .stage h4{font-size:15px;font-weight:600;margin:6px 0 5px}
+  .stage p{font-size:12.5px;color:var(--faint);line-height:1.45}
+
+  /* BEAMLINE — big numbers */
+  .beam-lead{display:grid;grid-template-columns:1fr 1fr;gap:40px;align-items:end;margin-bottom:66px}
+  .beam-lead h2{font-size:clamp(30px,5vw,58px)}
+  .beam-lead p{color:var(--muted);font-weight:350;font-size:17px}
+  .bignums{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--line);border:1px solid var(--line);border-radius:20px;overflow:hidden}
+  .bignum{background:var(--bg);padding:34px 28px;transition:.35s var(--ease)}
+  .bignum:hover{background:var(--panel)}
+  .bignum b{display:block;font-family:var(--disp);font-size:clamp(30px,4.4vw,52px);font-weight:600;line-height:1;letter-spacing:-.03em}
+  .bignum b i{font-style:normal;font-size:.5em;color:var(--muted);font-weight:500;margin-left:4px}
+  .bignum span{display:block;color:var(--faint);font-size:13.5px;margin-top:14px;line-height:1.4}
+  .specline{display:flex;flex-wrap:wrap;gap:10px 12px;margin-top:34px}
+  .chip{font-family:var(--mono);font-size:12.5px;color:var(--muted);border:1px solid var(--line2);border-radius:100px;padding:8px 16px;background:rgba(255,255,255,.02)}
+  .chip b{color:var(--cyan);font-weight:500}
+  .ref{font-family:var(--mono);font-size:12px;color:var(--faint);margin-top:26px}
+  .ref a{color:var(--cyan)} .ref a:hover{text-decoration:underline}
+
+  /* FEATURES */
+  .feat{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--line);border:1px solid var(--line);border-radius:22px;overflow:hidden}
+  .cell{background:var(--bg);padding:40px 34px;transition:.4s var(--ease);position:relative}
+  .cell:hover{background:var(--panel)}
+  .cell .ic{width:50px;height:50px;border-radius:13px;display:grid;place-items:center;margin-bottom:22px;border:1px solid var(--line2);background:rgba(79,214,255,.05)}
+  .cell .ic svg{width:25px;height:25px;stroke:var(--cyan);fill:none;stroke-width:1.6}
+  .cell h3{font-size:19px;font-weight:600;margin-bottom:10px;letter-spacing:-.01em}
+  .cell p{color:var(--muted);font-weight:350;font-size:14.5px}
+
+  /* SCIENCE */
+  .ctx{display:grid;grid-template-columns:1fr 1fr;gap:22px}
+  .ctxcard{border:1px solid var(--line);border-radius:22px;padding:40px 36px;background:linear-gradient(165deg,var(--panel),var(--bg));position:relative;overflow:hidden}
+  .ctxcard .tag{font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--amber);display:inline-block;margin-bottom:18px}
+  .ctxcard.two .tag{color:var(--cyan)}
+  .ctxcard h3{font-size:23px;font-weight:600;margin-bottom:14px}
+  .ctxcard p{color:var(--muted);font-weight:350;font-size:15px}
+
+  /* CTA */
+  .final{position:relative;text-align:center;overflow:hidden}
+  #ring2{position:absolute;inset:0;width:100%;height:100%;opacity:.5;z-index:0}
+  .final .wrap{position:relative;z-index:2}
+  .final h2{font-size:clamp(34px,6.2vw,74px);font-weight:600;max-width:15ch;margin:0 auto}
+  .final p{color:var(--muted);font-weight:350;font-size:18px;max-width:52ch;margin:24px auto 40px}
+  .doors{display:grid;grid-template-columns:1fr 1fr;gap:20px;max-width:820px;margin:60px auto 0;text-align:left}
+  .door{border:1px solid var(--line2);border-radius:22px;padding:36px 34px;background:rgba(12,17,25,.6);backdrop-filter:blur(6px);transition:.4s var(--ease);display:block;position:relative;overflow:hidden}
+  .door:hover{transform:translateY(-6px);border-color:var(--cyan);box-shadow:0 30px 60px -30px rgba(79,214,255,.5)}
+  .door .k{font-family:var(--mono);font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--cyan)}
+  .door.ind .k{color:var(--amber)}
+  .door h3{font-size:25px;font-weight:600;margin:14px 0 8px}
+  .door p{color:var(--muted);font-weight:350;font-size:14.5px;margin:0 0 20px}
+  .door .go{display:inline-flex;align-items:center;gap:9px;font-weight:600;font-size:14.5px}
+  .door .go svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:2;transition:transform .3s var(--ease)}
+  .door:hover .go svg{transform:translateX(5px)}
+
+  /* FOOTER */
+  footer{border-top:1px solid var(--line);padding:64px 0 72px;background:var(--bg2)}
+  footer .wrap{display:grid;grid-template-columns:1.6fr 1fr 1fr;gap:40px}
+  footer h5{font-family:var(--mono);font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--faint);margin-bottom:18px}
+  footer a.f{color:var(--muted);font-size:14px;display:block;padding:6px 0;transition:.25s}
+  footer a.f:hover{color:var(--cyan)}
+  footer .brand{margin-bottom:16px}
+  .disc{grid-column:1/-1;border-top:1px solid var(--line);margin-top:16px;padding-top:26px;color:var(--faint);font-size:12.5px;line-height:1.7}
+  .disc a{color:var(--muted);text-decoration:underline}
+
+  .reveal{opacity:0;transform:translateY(30px);filter:blur(6px);transition:opacity .9s var(--ease),transform .9s var(--ease),filter .9s var(--ease)}
+  .reveal.in{opacity:1;transform:none;filter:none}
+  .reveal.d1{transition-delay:.08s}.reveal.d2{transition-delay:.16s}.reveal.d3{transition-delay:.24s}
+
+  @media (max-width:960px){
+    .beam-lead,.ctx,footer .wrap{grid-template-columns:1fr}
+    .bignums{grid-template-columns:1fr 1fr}
+    .feat{grid-template-columns:1fr}
+    .stages{grid-template-columns:repeat(2,1fr);gap:34px 12px}
+    .track .rail,.track .fill{display:none}
+    .doors{grid-template-columns:1fr}
+    .nav nav{position:fixed;inset:72px 0 auto 0;flex-direction:column;gap:0;background:rgba(5,7,12,.96);
+      border-bottom:1px solid var(--line);padding:10px 24px 20px;display:none;backdrop-filter:blur(16px)}
+    .nav nav.open{display:flex}
+    .nav nav a.lnk{padding:14px 0;width:100%;border-bottom:1px solid var(--line)}
+    .nav nav .btn{margin-top:14px;width:100%;justify-content:center}
+    .navtoggle{display:block}
+    .hstats .scrollcue{display:none}
+  }
+  @media (prefers-reduced-motion:reduce){*{animation-duration:.001ms!important;transition-duration:.001ms!important;scroll-behavior:auto}
+    .reveal{opacity:1;transform:none;filter:none}
+    .hero .eyebrow,.hero h1,.hero .lede,.hero .cta-row{opacity:1;animation:none}}
+</style>
+<noscript><style>.reveal{opacity:1!important;transform:none!important;filter:none!important}</style></noscript>
+</head>
+<body>
+<div class="prog" id="prog"></div>
+
+<header class="nav" id="nav">
+  <div class="wrap">
+    <a class="brand" href="#top">
+      <svg viewBox="0 0 40 40" fill="none"><circle cx="20" cy="20" r="15" stroke="#4fd6ff" stroke-width="2"/><circle cx="20" cy="20" r="15" stroke="#8b7bff" stroke-width="2" stroke-dasharray="5 11" transform="rotate(30 20 20)"/><circle cx="20" cy="20" r="3.4" fill="#ffc46b"/></svg>
+      <span>iFuel<b>Tracker</b></span>
+    </a>
+    <button class="navtoggle" aria-label="Menu" onclick="document.getElementById('menu').classList.toggle('open')">≡</button>
+    <nav id="menu">
+      <a class="lnk" href="#journey">Journey</a>
+      <a class="lnk" href="#beamline">Beamline</a>
+      <a class="lnk" href="#platform">Platform</a>
+      <a class="lnk" href="#science">Science</a>
+      <a class="btn primary" href="/app">Launch app</a>
+    </nav>
+  </div>
+</header>
+
+<!-- HERO -->
+<section class="hero" id="top">
+  <canvas id="ring"></canvas>
+  <div class="wrap">
+    <div class="eyebrow">DESY · PETRA III · Extreme Conditions Beamline P02.2</div>
+    <h1>From the bench<br>to the <em>beam</em>.</h1>
+    <p class="lede">iFuelTracker follows every research material across the full journey between an industry partner's lab and the synchrotron — scanned at each station, custody logged to the person, monitored live. Nothing gets lost before beamtime.</p>
+    <div class="cta-row">
+      <a class="btn primary lg" href="/app">Enter the platform →</a>
+      <a class="btn ghost lg" href="#journey">Explore the workflow</a>
+    </div>
+  </div>
+  <div class="hstats">
+    <div class="wrap">
+      <div class="st"><b data-count="42.7" data-suffix="" data-post=" keV">42.7 keV</b><span>Working energy</span></div>
+      <div class="st"><b data-count="0.8" data-post=" µm">0.8 µm</b><span>Focused beam</span></div>
+      <div class="st"><b>µs-scale</b><span>Time-resolved</span></div>
+      <div class="scrollcue"><span>Scroll</span><div class="m"></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- JOURNEY -->
+<section class="blk journey" id="journey">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <div class="eyebrow">The sample lifecycle</div>
+      <h2>One unbroken chain of custody</h2>
+      <p>Every material moves through the same seven stages. A scan at each station stamps its location, time and handler — the record travels with the sample, not a spreadsheet.</p>
+    </div>
+    <div class="track reveal">
+      <div class="rail"></div><div class="fill" id="jfill"></div>
+      <div class="stages">
+        <div class="stage" data-s="0"><div class="node"><svg viewBox="0 0 24 24"><path d="M3 7h18v13H3z"/><path d="M3 7l3-4h12l3 4"/><path d="M9 11h6"/></svg></div><div class="num">01</div><h4>With Industry</h4><p>Registered at the partner site</p></div>
+        <div class="stage" data-s="1"><div class="node"><svg viewBox="0 0 24 24"><path d="M1 12h13"/><path d="M14 8l5 4-5 4"/><rect x="17" y="6" width="6" height="12" rx="1"/></svg></div><div class="num">02</div><h4>In Transit</h4><p>Shipped toward DESY</p></div>
+        <div class="stage" data-s="2"><div class="node"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M4 10h16M10 4v16"/></svg></div><div class="num">03</div><h4>DESY Storage</h4><p>Logged into the sample store</p></div>
+        <div class="stage" data-s="3"><div class="node"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M2 12h6M16 12h6M12 2v6M12 16v6"/></svg></div><div class="num">04</div><h4>At Beamline</h4><p>Mounted in the P02.2 hutch</p></div>
+        <div class="stage" data-s="4"><div class="node"><svg viewBox="0 0 24 24"><path d="M4 19V5M4 19h16"/><path d="M8 15l3-4 3 3 4-6"/></svg></div><div class="num">05</div><h4>Measured</h4><p>Diffraction data acquired</p></div>
+        <div class="stage" data-s="5"><div class="node"><svg viewBox="0 0 24 24"><path d="M23 12H10"/><path d="M14 8l-4 4 4 4"/><rect x="1" y="6" width="6" height="12" rx="1"/></svg></div><div class="num">06</div><h4>Return Transit</h4><p>Shipped back to the partner</p></div>
+        <div class="stage" data-s="6"><div class="node"><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg></div><div class="num">07</div><h4>Returned</h4><p>Closed loop, data attached</p></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- BEAMLINE -->
+<section class="blk alt" id="beamline">
+  <div class="wrap">
+    <div class="beam-lead">
+      <div class="reveal">
+        <div class="eyebrow">Reference environment</div>
+        <h2>Built around the Extreme Conditions Beamline</h2>
+      </div>
+      <p class="reveal d1">The journey ends where the science happens: DESY's P02.2 at PETRA III, where materials are held under simultaneous high pressure and temperature. Every figure below is the beamline's own published specification.</p>
+    </div>
+    <div class="bignums reveal">
+      <div class="bignum"><b data-count="42.7" data-post=" keV">42.7 keV</b><span>Maximum working energy (also 25.6 keV)</span></div>
+      <div class="bignum"><b data-count="0.8" data-post=" µm">0.8 µm</b><span>Sub-micron focus at 25.6 keV</span></div>
+      <div class="bignum"><b data-count="24" data-post=" kHz">24 kHz</b><span>Dual GaAs LAMBDA detector rate</span></div>
+      <div class="bignum"><b>µs</b><span>Time-resolved diffraction scale</span></div>
+    </div>
+    <div class="specline reveal d1">
+      <span class="chip">Focus <b>2 × 2 µm²</b> KB mirrors</span>
+      <span class="chip">Diamond Anvil Cell</span>
+      <span class="chip">Paris–Edinburgh press</span>
+      <span class="chip">Double-sided laser heating</span>
+      <span class="chip">Cryostat &amp; resistive heating</span>
+      <span class="chip">Micro powder &amp; single-crystal XRD</span>
+    </div>
+    <p class="ref reveal d1">Specifications: DESY Photon Science — <a href="https://photon-science.desy.de/facilities/petra_iii/beamlines/p022_extreme_conditions_beamline/index_eng.html" target="_blank" rel="noopener">P02.2 Extreme Conditions Beamline</a></p>
+  </div>
+</section>
+
+<!-- PLATFORM -->
+<section class="blk" id="platform">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <div class="eyebrow">What the platform does</div>
+      <h2>Logistics infrastructure for beamtime</h2>
+      <p>Beamtime is scarce and samples are irreplaceable. iFuelTracker removes the guesswork about where a material is, who handled it, and which data belongs to it.</p>
+    </div>
+    <div class="feat">
+      <div class="cell reveal"><div class="ic"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><path d="M14 14h3v3M20 20h.01M17 20h.01M20 17h.01"/></svg></div><h3>Scan at every station</h3><p>QR scans at designated points bind a sample to a location and stage in one tap — receiving, storage, beamline, return.</p></div>
+      <div class="cell reveal d1"><div class="ic"><svg viewBox="0 0 24 24"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z"/><path d="M9 12l2 2 4-4"/></svg></div><h3>Role-based access</h3><p>Beamline staff see everything; industry partners see only their own materials. Sign in by User ID — no shared inboxes.</p></div>
+      <div class="cell reveal d2"><div class="ic"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg></div><h3>Handler custody</h3><p>Each status change and scan records the person who did it, building an auditable chain of custody for every sample.</p></div>
+      <div class="cell reveal"><div class="ic"><svg viewBox="0 0 24 24"><path d="M3 12h4l2 6 4-14 2 8h6"/></svg></div><h3>Live monitoring board</h3><p>A self-refreshing wallboard shows what is where, right now — built for the control room during a beamtime run.</p></div>
+      <div class="cell reveal d1"><div class="ic"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M9 13h6M9 17h4"/></svg></div><h3>Data files, attached</h3><p>Upload measurement files against the sample; partners retrieve exactly their results, designed for real object storage.</p></div>
+      <div class="cell reveal d2"><div class="ic"><svg viewBox="0 0 24 24"><rect x="6" y="2" width="12" height="20" rx="2.5"/><path d="M11 18h2"/></svg></div><h3>Installable app</h3><p>A progressive web app installs on any phone or tablet — the same tool for scanning in the lab and watching from a desk.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- SCIENCE -->
+<section class="blk alt" id="science">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <div class="eyebrow">Why extreme conditions matter</div>
+      <h2>The materials behind clean and fusion energy</h2>
+      <p>The samples this platform tracks are studied under extreme pressure and temperature at PETRA III — where the atomic structure that governs real-world performance is resolved.</p>
+    </div>
+    <div class="ctx">
+      <div class="ctxcard reveal">
+        <span class="tag">Fusion-relevant materials</span>
+        <h3>iFuel — testing what faces the plasma</h3>
+        <p>DESY's IFuEL project, a €14 M BMFTR "Fusion 2040" programme led by Franz Kärtner, develops laser technology for inertial confinement fusion and will assess plasma-facing materials at PETRA III under fusion-relevant conditions. Extreme-conditions beamlines are exactly where such materials are characterised.</p>
+      </div>
+      <div class="ctxcard two reveal d1">
+        <span class="tag">Energy storage</span>
+        <h3>Hydrogen-storage alloys under pressure</h3>
+        <p>PETRA III has been used to watch special alloys absorb and release hydrogen in situ — resolving how the atoms rearrange as the material charges. Tracking these samples reliably through storage, beamline and return is what keeps such studies reproducible.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FINAL CTA -->
+<section class="blk final" id="access">
+  <canvas id="ring2"></canvas>
+  <div class="wrap">
+    <div class="reveal">
+      <div class="eyebrow">Two doors, one system</div>
+      <h2>Ready when your samples are.</h2>
+      <p>Register a material once and iFuelTracker carries its identity, location and data through the entire beamline journey.</p>
+      <a class="btn primary lg" href="/app">Launch iFuelTracker →</a>
+    </div>
+    <div class="doors">
+      <a class="door reveal" href="/app">
+        <div class="k">Beamline access</div>
+        <h3>Staff &amp; scientists</h3>
+        <p>Full view of every sample, station and partner. Move, scan, measure, attach data and manage collaborators.</p>
+        <span class="go">Enter workspace <svg viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span>
+      </a>
+      <a class="door ind reveal d1" href="/app">
+        <div class="k">Industry portal</div>
+        <h3>Partners</h3>
+        <p>See only your own materials, follow their status live and download the measurement data that belongs to you.</p>
+        <span class="go">Open partner view <svg viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span>
+      </a>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div>
+      <a class="brand" href="#top"><svg viewBox="0 0 40 40" fill="none" width="30" height="30"><circle cx="20" cy="20" r="15" stroke="#4fd6ff" stroke-width="2"/><circle cx="20" cy="20" r="3.4" fill="#ffc46b"/></svg><span>iFuel<b>Tracker</b></span></a>
+      <p style="color:var(--faint);font-size:14px;max-width:36ch;font-weight:350">Sample tracking and chain-of-custody for extreme-conditions materials research.</p>
+    </div>
+    <div>
+      <h5>Platform</h5>
+      <a class="f" href="#journey">The journey</a>
+      <a class="f" href="#platform">Features</a>
+      <a class="f" href="#access">Access</a>
+      <a class="f" href="/app">Launch app</a>
+    </div>
+    <div>
+      <h5>Reference</h5>
+      <a class="f" href="https://photon-science.desy.de/facilities/petra_iii/beamlines/p022_extreme_conditions_beamline/index_eng.html" target="_blank" rel="noopener">Beamline P02.2</a>
+      <a class="f" href="https://www.desy.de" target="_blank" rel="noopener">DESY · PETRA III</a>
+      <a class="f" href="https://www.cfel.de/news_archive/2026/news_2026/14m__ifuel_project_funding/index_eng.html" target="_blank" rel="noopener">IFuEL project</a>
+    </div>
+    <div class="disc">
+      iFuelTracker is an independent sample-logistics tool. P02.2 specifications are quoted from <a href="https://photon-science.desy.de/facilities/petra_iii/beamlines/p022_extreme_conditions_beamline/index_eng.html" target="_blank" rel="noopener">DESY Photon Science</a>. References to the DESY <a href="https://www.cfel.de/news_archive/2026/news_2026/14m__ifuel_project_funding/index_eng.html" target="_blank" rel="noopener">IFuEL</a> fusion-laser programme and to hydrogen-storage-alloy studies at PETRA III are provided as scientific context; this platform is not affiliated with or endorsed by DESY and does not claim to be part of those projects. © <span id="yr"></span> iFuelTracker.
+    </div>
+  </div>
+</footer>
+
+<script>
+(function(){
+  var reduce = matchMedia('(prefers-reduced-motion:reduce)').matches;
+  document.getElementById('yr').textContent = new Date().getFullYear();
+  document.querySelectorAll('#menu a').forEach(function(a){a.addEventListener('click',function(){document.getElementById('menu').classList.remove('open');});});
+
+  // ---- synchrotron canvas ----
+  function ring(canvas, opts){
+    var c = canvas.getContext('2d'), W,H,cx,cy,R, dpr=Math.min(devicePixelRatio||1,2), parts=[], t=0, beams=[];
+    opts = opts||{};
+    function size(){
+      W=canvas.clientWidth; H=canvas.clientHeight;
+      canvas.width=W*dpr; canvas.height=H*dpr; c.setTransform(dpr,0,0,dpr,0,0);
+      cx = opts.cxr!=null ? W*opts.cxr : W*0.5; cy=H*0.5; R=Math.min(W,H)*(opts.rr||0.32);
+    }
+    size(); addEventListener('resize',size,{passive:true});
+    var N = opts.n||90;
+    for(var i=0;i<N;i++) parts.push({a:Math.random()*Math.PI*2, sp:0.0009+Math.random()*0.0016, r:R*(0.985+Math.random()*0.03), s:Math.random()*0.6+0.3});
+    function draw(){
+      c.clearRect(0,0,W,H); t++;
+      // glow core
+      var g=c.createRadialGradient(cx,cy,0,cx,cy,R*1.5);
+      g.addColorStop(0,'rgba(79,214,255,0.10)'); g.addColorStop(0.5,'rgba(139,123,255,0.05)'); g.addColorStop(1,'rgba(5,7,12,0)');
+      c.fillStyle=g; c.beginPath(); c.arc(cx,cy,R*1.5,0,7); c.fill();
+      // ring base
+      c.strokeStyle='rgba(255,255,255,0.06)'; c.lineWidth=1; c.beginPath(); c.arc(cx,cy,R,0,7); c.stroke();
+      c.strokeStyle='rgba(79,214,255,0.14)'; c.lineWidth=1; c.beginPath(); c.arc(cx,cy,R*0.82,0,7); c.stroke();
+      // beam tangent to the right
+      var bx=cx+R, by=cy;
+      c.strokeStyle='rgba(79,214,255,'+(0.25+0.2*Math.sin(t*0.05))+')'; c.lineWidth=1.4;
+      c.beginPath(); c.moveTo(bx,by); c.lineTo(W+20,by); c.stroke();
+      // particles
+      for(var i=0;i<parts.length;i++){var p=parts[i]; p.a+=p.sp;
+        var x=cx+Math.cos(p.a)*p.r, y=cy+Math.sin(p.a)*p.r;
+        c.beginPath(); c.arc(x,y,p.s*1.7,0,7);
+        c.fillStyle='rgba(120,220,255,'+(0.25+p.s*0.6)+')'; c.fill();
+        // occasional extraction beam
+        if(!reduce && Math.random()<0.0006){ beams.push({x:x,y:y,vx:(bx-x)*0.04+2,vy:(by-y)*0.04,life:60}); }
+      }
+      for(var j=beams.length-1;j>=0;j--){var b=beams[j]; b.x+=b.vx; b.y+=b.vy; b.life--;
+        c.beginPath(); c.arc(b.x,b.y,1.6,0,7); c.fillStyle='rgba(255,196,107,'+(b.life/60)+')'; c.fill();
+        if(b.life<=0||b.x>W) beams.splice(j,1);}
+      // core node
+      var cg=c.createRadialGradient(cx,cy,0,cx,cy,R*0.16);
+      cg.addColorStop(0,'rgba(255,196,107,0.9)'); cg.addColorStop(1,'rgba(255,107,166,0)');
+      c.fillStyle=cg; c.beginPath(); c.arc(cx,cy,R*0.16,0,7); c.fill();
+      raf=requestAnimationFrame(draw);
+    }
+    var raf; if(!reduce) draw(); else { draw(); cancelAnimationFrame(raf); }
+  }
+  var rc=document.getElementById('ring'); if(rc) ring(rc,{cxr:0.72,rr:0.34,n:110});
+  var rc2=document.getElementById('ring2'); if(rc2) ring(rc2,{cxr:0.5,rr:0.26,n:60});
+
+  // ---- scroll: nav, progress, reveal, journey fill, counters ----
+  var nav=document.getElementById('nav'), prog=document.getElementById('prog');
+  var reveals=[].slice.call(document.querySelectorAll('.reveal'));
+  var counters=[].slice.call(document.querySelectorAll('[data-count]'));
+  var jsection=document.getElementById('journey'), jfill=document.getElementById('jfill');
+  var stages=[].slice.call(document.querySelectorAll('.stage'));
+  function fmt(n){return (n%1)?n.toFixed(1):(''+n);}
+  function runCount(el){ if(el.dataset.done)return; el.dataset.done='1';
+    var target=parseFloat(el.dataset.count), post=el.dataset.post||'', t0=null;
+    function step(ts){ if(!t0)t0=ts; var p=Math.min((ts-t0)/1100,1); var v=target*(1-Math.pow(1-p,3));
+      el.textContent=fmt(Math.round(v*10)/10)+post; if(p<1)requestAnimationFrame(step); else el.textContent=fmt(target)+post; }
+    requestAnimationFrame(step);
+  }
+  function onScroll(){
+    var y=scrollY||document.documentElement.scrollTop;
+    var docH=document.documentElement.scrollHeight-innerHeight;
+    prog.style.width=(docH>0?(y/docH*100):0)+'%';
+    nav.classList.toggle('solid', y>40);
+    var vh=innerHeight;
+    for(var i=0;i<reveals.length;i++){var el=reveals[i]; if(el.classList.contains('in'))continue;
+      if(el.getBoundingClientRect().top < vh*0.9) el.classList.add('in');}
+    for(var k=0;k<counters.length;k++){var cel=counters[k]; if(cel.dataset.done)continue;
+      if(cel.getBoundingClientRect().top < vh*0.85) runCount(cel);}
+    // journey beam fill
+    if(jsection){var r=jsection.getBoundingClientRect();
+      var prog2=Math.max(0,Math.min(1,(vh*0.72 - r.top)/(r.height*0.66)));
+      jfill.style.width=(prog2*85.7)+'%';
+      var active=Math.round(prog2*6);
+      for(var s=0;s<stages.length;s++) stages[s].classList.toggle('on', s<=active && prog2>0.02);
+    }
+  }
+  var tick=false;
+  addEventListener('scroll',function(){if(tick)return;tick=true;requestAnimationFrame(function(){onScroll();tick=false;});},{passive:true});
+  addEventListener('resize',onScroll); addEventListener('load',onScroll); onScroll();
+})();
+</script>
+</body>
+</html>

@@ -188,7 +188,7 @@ async function api(path, opts={}) {
 }
 // QR content: once deployed, encode a full link so a normal phone camera opens the record;
 // locally (no public URL) encode the bare code for the in-app scanner.
-function qrPayload(code){ return state.publicUrl ? (state.publicUrl.replace(/\/+$/,'') + '/?code=' + encodeURIComponent(code)) : code; }
+function qrPayload(code){ return state.publicUrl ? (state.publicUrl.replace(/\/+$/,'') + '/app/?code=' + encodeURIComponent(code)) : code; }
 const statusClass = (code) => 's-'+code;
 const statusLabel = (code) => (state.statuses.find(s=>s.code===code)||{}).label || code;
 // Vivid per-status fills for the dashboard chart (readable on the dark panel).

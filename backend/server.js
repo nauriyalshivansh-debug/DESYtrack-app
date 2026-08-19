@@ -12,7 +12,11 @@ app.use((req, res, next) => {
   if (req.path === '/api/uploads/local') return next();
   return express.json()(req, res, next);
 });
-app.use(express.static(path.join(__dirname, '..', 'public')));
+const PUBLIC_DIR = path.join(__dirname, '..', 'public');
+app.use(express.static(PUBLIC_DIR, { index: false }));
+// Marketing landing page at the root; the app (SPA) is served under /app.
+app.get('/', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'landing.html')));
+app.get(['/app', '/app/'], (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'index.html')));
 
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-me';
 const PORT = process.env.PORT || 3000;
