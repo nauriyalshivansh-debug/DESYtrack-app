@@ -883,7 +883,8 @@ function openStationForm(){
 function modal(inner){
   const bg = el('<div class="modal-bg"></div>');
   const m = el('<div class="modal"></div>'); m.innerHTML = inner; bg.appendChild(m);
-  bg.onclick = (e)=>{ if(e.target===bg) bg.remove(); };
+  // Clicking outside does NOT close/discard — forms must be closed via Cancel/Save,
+  // so a stray click can't wipe unsaved edits. (Scan modals re-enable outside-click.)
   document.body.appendChild(bg);
   return { bg, close:()=>bg.remove() };
 }
