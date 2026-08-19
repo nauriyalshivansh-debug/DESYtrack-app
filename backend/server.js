@@ -120,6 +120,33 @@ app.post('/api/users/:id/password', auth, requireRole('admin'), async (req, res)
   res.json({ ok: true });
 });
 
+// Update a user's details (admin). Does not touch the password (use the reset endpoint).
+app.put('/api/users/:id', auth, requireRole('admin'), async (req, res) => {
+  const id = Number(req.params.id);
+  const u = await db.prepare('SELECT id, role FROM users WHERE id=?').get(id);
+  if (!u) return res.status(404).json({ error: 'Not found' });
+  const b = req.body || {};
+  if ('role' in b && !['admin', 'member', 'partner'].includes(b.role)) return res.status(400).json({ error: 'bad role' });
+  // Don't let the last admin lose their admin role.
+  if ('role' in b && u.role === 'admin' && b.role !== 'admin') {
+    const admins = (await db.prepare("SELECT COUNT(*) n FROM users WHERE role='admin' AND is_active=1").get()).n;
+    if (admins <= 1) return res.status(400).json({ error: 'Cannot change the role of the last active admin' });
+  }
+  const nullable = new Set(['username', 'email', 'organization']);
+  const sets = [], args = {};
+  for (const f of ['username', 'email', 'full_name', 'role', 'organization']) {
+    if (f in b) { sets.push(`${f}=@${f}`); args[f] = nullable.has(f) ? (b[f] || null) : b[f]; }
+  }
+  if (!sets.length) return res.status(400).json({ error: 'nothing to update' });
+  args.id = id;
+  try {
+    await db.prepare(`UPDATE users SET ${sets.join(',')} WHERE id=@id`).run(args);
+  } catch (e) {
+    return res.status(409).json({ error: 'That User ID or email is already taken' });
+  }
+  res.json({ ok: true });
+});
+
 app.post('/api/users/:id/active', auth, requireRole('admin'), async (req, res) => {
   const id = Number(req.params.id);
   const active = (req.body && req.body.active) ? 1 : 0;
@@ -198,8 +225,13 @@ app.get('/api/samples/:id', auth, async (req, res) => {
     : `SELECT c.*, u.full_name AS author FROM comments c JOIN users u ON u.id=c.author_id WHERE sample_id=? AND visibility='shared' ORDER BY created_at`;
   const comments = await db.prepare(commentSql).all(id);
   const events = await db.prepare('SELECT e.*, u.full_name AS actor FROM custody_events e JOIN users u ON u.id=e.actor_id WHERE sample_id=? ORDER BY created_at DESC').all(id);
+  let collaborators = [];
+  if (isInternal(req.user)) {
+    collaborators = await db.prepare(`SELECT u.id AS user_id, u.full_name, u.role, u.organization, sa.can_edit
+       FROM sample_access sa JOIN users u ON u.id=sa.user_id WHERE sa.sample_id=? ORDER BY u.role, u.full_name`).all(id);
+  }
 
-  res.json({ sample, tests, comments, events, can_edit: !!access.can_edit });
+  res.json({ sample, tests, comments, events, collaborators, can_edit: !!access.can_edit });
 });
 
 app.post('/api/samples', auth, requireRole('admin', 'member'), async (req, res) => {
@@ -295,19 +327,20 @@ app.post('/api/samples/:id/comments', auth, async (req, res) => {
 // Partner access grants (admin only)
 // ------------------------------------------------------------------
 app.get('/api/samples/:id/access', auth, requireRole('admin', 'member'), async (req, res) => {
-  res.json(await db.prepare(`SELECT sa.*, u.full_name, u.email, u.organization
+  res.json(await db.prepare(`SELECT sa.*, u.full_name, u.email, u.organization, u.role
      FROM sample_access sa JOIN users u ON u.id=sa.user_id WHERE sample_id=?`).all(req.params.id));
 });
-app.post('/api/samples/:id/access', auth, requireRole('admin'), async (req, res) => {
+// Add a collaborator (any active user). For partners this also grants view access.
+app.post('/api/samples/:id/access', auth, requireRole('admin', 'member'), async (req, res) => {
   const { user_id, can_edit } = req.body || {};
-  const partner = await db.prepare("SELECT id FROM users WHERE id=? AND role='partner'").get(user_id);
-  if (!partner) return res.status(400).json({ error: 'user must be a partner' });
+  const user = await db.prepare('SELECT id FROM users WHERE id=? AND is_active=1').get(user_id);
+  if (!user) return res.status(400).json({ error: 'unknown user' });
   await db.prepare(`INSERT INTO sample_access(sample_id,user_id,can_edit,granted_by) VALUES (?,?,?,?)
      ON CONFLICT(sample_id,user_id) DO UPDATE SET can_edit=excluded.can_edit`)
     .run(req.params.id, user_id, can_edit ? 1 : 0, req.user.id);
   res.json({ ok: true });
 });
-app.delete('/api/samples/:id/access/:userId', auth, requireRole('admin'), async (req, res) => {
+app.delete('/api/samples/:id/access/:userId', auth, requireRole('admin', 'member'), async (req, res) => {
   await db.prepare('DELETE FROM sample_access WHERE sample_id=? AND user_id=?').run(req.params.id, req.params.userId);
   res.json({ ok: true });
 });

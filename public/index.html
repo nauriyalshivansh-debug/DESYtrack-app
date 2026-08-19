@@ -426,7 +426,9 @@ async function renderDetail(id) {
         ${internal?`<div style="flex:0 0 auto"><select id="cvis"><option value="shared">Shared</option><option value="internal">Internal only</option></select></div>`:''}
         <div style="flex:0 0 auto"><button id="postC">Post</button></div>
       </div>
-      ${internal?`<div style="margin-top:14px"><button class="ghost sm" id="mgAccess">Manage industry access</button></div>`:''}
+      ${internal?`<div style="margin-top:14px">
+        <div class="muted" style="font-size:12px;margin-bottom:6px">Collaborators: ${d.collaborators&&d.collaborators.length? d.collaborators.map(c=>esc(c.full_name)+' ('+esc(roleLabel(c.role))+')').join(', ') : 'none yet'}</div>
+        <button class="ghost sm" id="mgAccess">Manage collaborators</button></div>`:''}
     </div>`;
 
   $('#back').onclick = renderList;
@@ -1004,17 +1006,18 @@ function openAddTest(id){
 }
 async function openAccess(id){
   const [grants, users] = await Promise.all([ api('/api/samples/'+id+'/access'), api('/api/users') ]);
-  const partners = users.filter(u=>u.role==='partner');
-  const {bg,close}=modal(`<h2>Industry partner access</h2>
+  const addable = users.filter(u=>u.is_active);
+  const {bg,close}=modal(`<h2>Collaborators</h2>
+    <div class="muted" style="margin-bottom:10px">Assign people to work on this sample together — beamline staff and industry partners. Adding a partner also gives them access to view it.</div>
     <div id="glist">${grants.map(g=>`<div class="flex-between" style="padding:6px 0;border-bottom:1px solid var(--line)">
-      <div>${esc(g.full_name)} <span class="muted">${esc(g.organization||'')}</span></div>
-      <button class="sm ghost" data-rm="${g.user_id}">Remove</button></div>`).join('')||'<div class="muted">No partners have access.</div>'}</div>
-    <label>Grant access to an industry partner</label>
-    <div class="row"><select id="pu" style="flex:3">${partners.map(p=>`<option value="${p.id}">${esc(p.full_name)} — ${esc(p.organization||'')}</option>`).join('')}</select>
-    <button id="grant" style="flex:0 0 auto">Grant</button></div>
+      <div>${esc(g.full_name)} <span class="pill">${esc(roleLabel(g.role))}</span> <span class="muted">${esc(g.organization||'')}</span></div>
+      <button class="sm ghost" data-rm="${g.user_id}">Remove</button></div>`).join('')||'<div class="muted">No collaborators yet.</div>'}</div>
+    <label>Add a collaborator</label>
+    <div class="row"><select id="pu" style="flex:3">${addable.map(p=>`<option value="${p.id}">${esc(p.full_name)} — ${esc(roleLabel(p.role))}${p.organization?(' · '+esc(p.organization)):''}</option>`).join('')}</select>
+    <button id="grant" style="flex:0 0 auto">Add</button></div>
     <div style="margin-top:16px;text-align:right"><button class="ghost" id="done">Close</button></div>`);
-  $('#done').onclick=close;
-  $('#grant').onclick=async()=>{ if($('#pu').value){ await api('/api/samples/'+id+'/access',{method:'POST',body:{user_id:Number($('#pu').value)}}); close(); openAccess(id);} };
+  $('#done').onclick=()=>{ close(); renderDetail(id); };
+  $('#grant').onclick=async()=>{ if($('#pu').value){ try{ await api('/api/samples/'+id+'/access',{method:'POST',body:{user_id:Number($('#pu').value)}}); close(); openAccess(id);}catch(e){ alert(e.message);} } };
   bg.querySelectorAll('[data-rm]').forEach(b=>b.onclick=async()=>{ await api('/api/samples/'+id+'/access/'+b.dataset.rm,{method:'DELETE'}); close(); openAccess(id); });
 }
 async function openUsers(){
@@ -1029,6 +1032,7 @@ async function openUsers(){
       <td><span class="pill">${esc(roleLabel(u.role))}</span></td>
       <td>${esc(u.organization||'—')}</td>
       <td style="text-align:right;white-space:nowrap">
+        ${isAdmin?`<button class="sm ghost" data-edit="${u.id}">Edit</button>`:''}
         ${u.role!=='partner'?`<button class="sm ghost" data-badge="${u.id}" data-name="${esc(u.full_name)}">Badge</button>`:''}
         ${isAdmin?`<button class="sm ghost" data-pw="${u.id}" data-name="${esc(u.full_name)}">Reset PW</button>`:''}
         ${isAdmin&&!self?`<button class="sm ghost" data-active="${u.id}" data-to="${u.is_active?0:1}">${u.is_active?'Disable':'Enable'}</button>`:''}
@@ -1051,6 +1055,7 @@ async function openUsers(){
   if($('#printBadges')) $('#printBadges').onclick=()=>printAllBadges(users.filter(u=>u.role!=='partner'));
   document.querySelectorAll('[data-badge]').forEach(b=>b.onclick=()=>printBadge(Number(b.dataset.badge), b.dataset.name));
   document.querySelectorAll('[data-pw]').forEach(b=>b.onclick=()=>openResetPw(b.dataset.pw, b.dataset.name));
+  document.querySelectorAll('[data-edit]').forEach(b=>{ const eu=users.find(x=>x.id===Number(b.dataset.edit)); if(eu) b.onclick=()=>{ close(); openEditUser(eu); }; });
   document.querySelectorAll('[data-active]').forEach(b=>b.onclick=async()=>{
     try{ await api('/api/users/'+b.dataset.active+'/active',{method:'POST',body:{active:b.dataset.to==='1'}}); close(); openUsers(); }
     catch(e){ alert(e.message); }
@@ -1063,6 +1068,32 @@ async function openUsers(){
   if($('#addU')) $('#addU').onclick=async()=>{
     try{ await api('/api/users',{method:'POST',body:{ username:$('#u_username').value, full_name:$('#u_name').value,
       email:$('#u_email').value||null, password:$('#u_pw').value, role:$('#u_role').value, organization:$('#u_org').value }});
+      close(); openUsers(); }
+    catch(e){ $('#e').textContent=e.message; }
+  };
+}
+
+function openEditUser(u){
+  const {close}=modal(`<h2>Edit ${esc(u.full_name)}</h2>
+    <div class="grid2">
+      <div><label>User ID</label><input id="eu_username" value="${esc(u.username||'')}"/></div>
+      <div><label>Full name</label><input id="eu_name" value="${esc(u.full_name||'')}"/></div>
+      <div><label>Email</label><input id="eu_email" value="${esc(u.email||'')}"/></div>
+      <div><label>Role</label><select id="eu_role">
+        <option value="member" ${u.role==='member'?'selected':''}>Beamline Staff</option>
+        <option value="partner" ${u.role==='partner'?'selected':''}>Industry Partner</option>
+        <option value="admin" ${u.role==='admin'?'selected':''}>Admin</option></select></div>
+      <div><label>Organization (partners)</label><input id="eu_org" value="${esc(u.organization||'')}"/></div>
+    </div>
+    <div class="muted" style="font-size:12px;margin-top:6px">To change the password, use <b>Reset PW</b> instead.</div>
+    <div class="err" id="e"></div>
+    <div style="margin-top:16px;display:flex;gap:10px;justify-content:flex-end">
+      <button class="ghost" id="cancel">Cancel</button><button id="save">Save</button></div>`);
+  $('#cancel').onclick=()=>{ close(); openUsers(); };
+  $('#save').onclick=async()=>{
+    try{ await api('/api/users/'+u.id,{method:'PUT',body:{
+      username:$('#eu_username').value, full_name:$('#eu_name').value, email:$('#eu_email').value||null,
+      role:$('#eu_role').value, organization:$('#eu_org').value||null }});
       close(); openUsers(); }
     catch(e){ $('#e').textContent=e.message; }
   };
