@@ -298,6 +298,7 @@ async function renderList() {
         ${internal?'<button class="ghost" id="board">📺 Live board</button>':''}
         <div style="flex:1"></div>
         ${internal?'<button class="ghost" id="stations">Stations</button>':''}
+        ${state.user.role==='admin'?'<button class="ghost" id="move">📍 Move</button>':''}
         ${internal?'<button class="ghost" id="printLabels">🖶 Labels</button>':''}
         ${internal?'<button class="ghost" id="mgUsers">Users</button>':''}
       </div>
@@ -331,6 +332,7 @@ async function renderList() {
   if($('#mgUsers')) $('#mgUsers').onclick = openUsers;
   if($('#stations')) $('#stations').onclick = renderStations;
   if($('#board')) $('#board').onclick = renderBoard;
+  if($('#move')) $('#move').onclick = openManualMove;
   if($('#printLabels')) $('#printLabels').onclick = ()=>printSampleLabels(listedSamples);
   if($('#scan')) $('#scan').onclick = openScan;
 }
@@ -880,6 +882,37 @@ function openStationForm(){
 // ------------------------------------------------------------------
 // MODALS
 // ------------------------------------------------------------------
+// Admin-only manual move: pick a sample + location (+ handler) from dropdowns,
+// set its location and advance its stage without scanning. Uses the scan engine.
+async function openManualMove(preSampleCode){
+  let samples=[], stations=[], users=[];
+  try{ [samples, stations, users] = await Promise.all([api('/api/samples'), api('/api/stations'), api('/api/users')]); }catch(e){}
+  const staff = users.filter(u=>u.role!=='partner');
+  const {close}=modal(`<h2>Move a sample (manual)</h2>
+    <div class="muted" style="margin-bottom:10px">Admin override — set a sample's location and stage without scanning a QR.</div>
+    <label>Sample</label>
+    <select id="mm_sample">${samples.map(s=>`<option value="${esc(s.sample_code)}" ${preSampleCode===s.sample_code?'selected':''}>${esc(s.sample_code)} — ${esc(s.name)} · ${esc(s.status_label)}</option>`).join('')||'<option value="">No samples</option>'}</select>
+    <label>Location / station</label>
+    <select id="mm_station">${stations.map(st=>`<option value="${esc(st.code)}">${esc(st.label)} — ${esc(st.location)}${st.status_label?(' → '+esc(st.status_label)):''}</option>`).join('')}</select>
+    <label>Hand custody to (optional)</label>
+    <select id="mm_handler"><option value="">— leave custodian unchanged —</option>${staff.map(u=>`<option value="USR-${u.id}">${esc(u.full_name)}</option>`).join('')}</select>
+    <div class="feedback" id="mm_fb"></div>
+    <div class="err" id="e"></div>
+    <div style="margin-top:16px;display:flex;gap:10px;justify-content:flex-end">
+      <button class="ghost" id="cancel">Close</button><button id="apply">Apply move</button></div>`);
+  $('#cancel').onclick=close;
+  $('#apply').onclick=async()=>{
+    $('#e').textContent='';
+    const sc=$('#mm_sample').value; if(!sc){ $('#e').textContent='Pick a sample.'; return; }
+    try{
+      const body={ sample_code:sc, station_code:$('#mm_station').value };
+      const h=$('#mm_handler').value; if(h) body.handler_code=h;
+      const r=await api('/api/scan',{method:'POST',body});
+      const fb=$('#mm_fb'); fb.className='feedback show '+(r.statusBlocked?'warn':'ok'); fb.textContent=r.message;
+    }catch(e){ $('#e').textContent=e.message; }
+  };
+}
+
 function modal(inner){
   const bg = el('<div class="modal-bg"></div>');
   const m = el('<div class="modal"></div>'); m.innerHTML = inner; bg.appendChild(m);
