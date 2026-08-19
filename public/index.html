@@ -9,9 +9,9 @@
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-<meta name="apple-mobile-web-app-title" content="DESYtrack" />
+<meta name="apple-mobile-web-app-title" content="iFuelTracker" />
 <link rel="apple-touch-icon" href="/icon-192.png" />
-<title>DESYtrack — Lab Sample Tracking</title>
+<title>iFuelTracker — Sample Tracking</title>
 <style>
   :root{
     --bg:#0f1720; --panel:#17212e; --panel2:#1e2b3a; --line:#2b3a4d;
@@ -137,6 +137,16 @@
   .role-card p{margin:0;font-size:12.5px;color:var(--muted);line-height:1.5}
   .role-card .acc{display:inline-block;font-size:11px;margin-top:6px;padding:1px 8px;border-radius:12px;
     background:rgba(43,182,115,.14);color:var(--accent2)}
+  .choose-card{display:flex;flex-direction:column;align-items:flex-start;gap:2px;text-align:left;
+    background:rgba(30,43,58,.72);border:1px solid var(--line);border-radius:16px;padding:24px;cursor:pointer;
+    color:var(--ink);font:inherit;transition:transform .15s,border-color .15s}
+  .choose-card:hover{transform:translateY(-3px);border-color:var(--accent)}
+  .choose-card .ic{font-size:28px}
+  .choose-card h3{margin:8px 0 2px;font-size:18px;color:var(--ink)}
+  .choose-card p{margin:0;font-size:13px;color:var(--muted);line-height:1.5}
+  .choose-card .go{margin-top:12px;color:var(--accent);font-weight:700;font-size:13px}
+  .linklike{background:none;border:none;color:var(--muted);padding:0;font-size:12px;cursor:pointer;margin-bottom:10px;display:inline-block}
+  .linklike:hover{color:var(--ink)}
   /* ---- live board ---- */
   .board{display:flex;gap:12px;overflow-x:auto;padding-bottom:10px;align-items:flex-start}
   .bcol{flex:0 0 240px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px;max-height:74vh;overflow-y:auto}
@@ -195,38 +205,56 @@ const roleLabel = (r) => ROLE_LABEL[r] || r;
 // ------------------------------------------------------------------
 // LOGIN
 // ------------------------------------------------------------------
-function renderLogin() {
-  document.getElementById('app').innerHTML = '';
-  const wrap = el(`<div class="login-hero"><div class="login-box">
-    <div class="login-top">
-      <div class="wm">DESY<span>track</span></div>
-      <div class="tag">Sample custody &amp; tracking — from industry, through the beamline, and back.</div>
-    </div>
-    <div class="login-cols">
-      <div class="login-signin">
-        <h3>Sign in</h3>
-        <label>User ID</label><input id="userid" placeholder="your user ID" autocomplete="username" />
-        <label>Password</label><input id="password" type="password" autocomplete="current-password" />
-        <div style="margin-top:16px"><button id="go" style="width:100%">Sign in</button></div>
-        <div class="err" id="loginErr"></div>
-        <div class="hint" style="margin-top:14px">Your access depends on your role. Accounts are issued by your administrator.</div>
+function renderLogin(audience) {
+  const app = document.getElementById('app');
+  app.innerHTML = '';
+
+  // Step 1 — the "pick your door" chooser (Admin stays hidden; admins use either door).
+  if (!audience) {
+    const wrap = el(`<div class="login-hero"><div class="login-box" style="max-width:780px">
+      <div class="login-top">
+        <div class="wm">iFuel<span>Tracker</span></div>
+        <div class="tag">Sample custody &amp; tracking — from industry, through the beamline, and back.</div>
       </div>
-      <div class="role-grid">
-        <div class="role-card"><div class="ic">🔬</div><div>
-          <h4>Beamline Staff</h4>
-          <p>Logs and edits samples, scans them through each station to advance the journey, records tests, and uploads beamline data files.</p>
-          <div class="acc">Full working access</div></div></div>
-        <div class="role-card"><div class="ic">🏭</div><div>
-          <h4>Industry Partner</h4>
-          <p>Follows only their own shared samples — live status, current location and shared data files. Read-only; never sees internal notes or other partners' samples.</p>
-          <div class="acc">Limited · read-only</div></div></div>
+      <div class="muted" style="text-align:center;margin:0 0 16px">How are you signing in?</div>
+      <div class="login-cols">
+        <button class="choose-card" id="pickBeam">
+          <div class="ic">🔬</div>
+          <h3>Beamline Staff</h3>
+          <p>Log and scan samples, run the workflow, record tests and upload data.</p>
+          <div class="go">Sign in →</div></button>
+        <button class="choose-card" id="pickInd">
+          <div class="ic">🏭</div>
+          <h3>Industry Partner</h3>
+          <p>Track your own samples — live status, location and shared data files.</p>
+          <div class="go">Sign in →</div></button>
       </div>
+    </div></div>`);
+    app.appendChild(wrap);
+    $('#pickBeam').onclick = () => renderLogin('beamline');
+    $('#pickInd').onclick = () => renderLogin('industry');
+    return;
+  }
+
+  // Step 2 — the sign-in form (identical logic for both doors).
+  const title = audience === 'industry' ? 'Industry Partner sign in' : 'Beamline Staff sign in';
+  const wrap = el(`<div class="login-hero"><div class="login-box" style="max-width:420px">
+    <div class="login-top"><div class="wm">iFuel<span>Tracker</span></div></div>
+    <div class="login-signin">
+      <button class="linklike" id="backChoose">← choose a different login</button>
+      <h3>${title}</h3>
+      <label>User ID</label><input id="userid" placeholder="your user ID" autocomplete="username" />
+      <label>Password</label><input id="password" type="password" autocomplete="current-password" />
+      <div style="margin-top:16px"><button id="go" style="width:100%">Sign in</button></div>
+      <div class="err" id="loginErr"></div>
+      <div class="hint" style="margin-top:14px">Your access depends on your role. Accounts are issued by your administrator.</div>
     </div>
   </div></div>`);
-  document.getElementById('app').appendChild(wrap);
-  if($('#userid')) $('#userid').focus();
+  app.appendChild(wrap);
+  if ($('#userid')) $('#userid').focus();
+  $('#backChoose').onclick = () => renderLogin();
   const doLogin = async () => {
-    $('#loginErr').textContent='';
+    $('#loginErr').textContent = '';
     try {
       const r = await api('/api/login', { method:'POST', body:{ username:$('#userid').value, password:$('#password').value }});
       state.token = r.token; state.user = r.user; state.publicUrl = r.publicUrl || '';
@@ -245,7 +273,7 @@ function renderApp() {
   const u = state.user;
   document.getElementById('app').innerHTML = '';
   const header = el(`<header>
-    <div class="brand">DESY<span>track</span></div>
+    <div class="brand">iFuel<span>Tracker</span></div>
     <div class="who">${esc(u.name)} · <span class="badge">${esc(roleLabel(u.role))}${u.organization?(' · '+esc(u.organization)):''}</span>
       <button class="ghost sm" id="logout" style="margin-left:10px">Sign out</button></div>
   </header>`);
@@ -397,7 +425,7 @@ async function renderDetail(id) {
 
     <div class="card">
       <div class="flex-between"><h3 style="margin:0">Data files</h3>${internal?'<button class="sm ghost" id="addFile">⬆ Upload</button>':''}</div>
-      <div class="muted" style="font-size:12px;margin:2px 0 10px">${internal?'Beamline scan data &amp; reports. <b>Shared</b> files are visible to the industry partner; <b>internal</b> files are staff-only.':'Data files shared with you by the DESY team.'}</div>
+      <div class="muted" style="font-size:12px;margin:2px 0 10px">${internal?'Beamline scan data &amp; reports. <b>Shared</b> files are visible to the industry partner; <b>internal</b> files are staff-only.':'Data files shared with you by the lab team.'}</div>
       <div id="files"><div class="muted">Loading…</div></div>
     </div>
 
@@ -736,7 +764,7 @@ function openUpload(id){
     <input type="file" id="upFile"/>
     <label style="margin-top:12px">Visibility</label>
     <select id="upVis"><option value="shared">Shared — the industry partner can see &amp; download it</option>
-      <option value="internal">Internal — DESY staff only</option></select>
+      <option value="internal">Internal — staff only</option></select>
     <div id="upProg" class="muted" style="margin-top:10px"></div>
     <div class="err" id="e"></div>
     <div style="margin-top:16px;display:flex;gap:10px;justify-content:flex-end">

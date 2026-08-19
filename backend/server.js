@@ -545,5 +545,5 @@ app.use((err, req, res, next) => {
 });
 
 db.init()
-  .then(() => app.listen(PORT, () => console.log(`DESYtrack API + UI running on http://localhost:${PORT} [db: postgres, storage: ${storage.mode}]`)))
+  .then(() => app.listen(PORT, () => console.log(`iFuelTracker API + UI running on http://localhost:${PORT} [db: postgres, storage: ${storage.mode}]`)))
   .catch((e) => { console.error('Database init failed:', e.message); process.exit(1); });

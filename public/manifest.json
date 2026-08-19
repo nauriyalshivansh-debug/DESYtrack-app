@@ -1,6 +1,6 @@
 {
-  "name": "DESYtrack — Sample Tracking",
-  "short_name": "DESYtrack",
+  "name": "iFuelTracker — Sample Tracking",
+  "short_name": "iFuelTracker",
   "description": "Scan lab samples through the beamline journey and monitor their status live.",
   "start_url": "/",
   "scope": "/",
