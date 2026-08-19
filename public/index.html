@@ -989,15 +989,17 @@ async function openUsers(){
   const {close}=modal(`<div class="flex-between"><h2 style="margin:0">Users</h2>
       <button class="sm ghost" id="printBadges">🖶 Print staff badges</button></div>
     <table><thead><tr><th>Name</th><th>User ID</th><th>Role</th><th>Org</th><th></th></tr></thead><tbody>
-    ${users.map(u=>`<tr>
-      <td>${esc(u.full_name)}${u.email?`<div class="muted">${esc(u.email)}</div>`:''}</td>
+    ${users.map(u=>{ const self=u.id===state.user.id; return `<tr style="${u.is_active?'':'opacity:.5'}">
+      <td>${esc(u.full_name)}${self?' <span class="pill">you</span>':''}${u.is_active?'':' <span class="pill">disabled</span>'}${u.email?`<div class="muted">${esc(u.email)}</div>`:''}</td>
       <td><span class="pill">${esc(u.username||'—')}</span></td>
       <td><span class="pill">${esc(roleLabel(u.role))}</span></td>
       <td>${esc(u.organization||'—')}</td>
       <td style="text-align:right;white-space:nowrap">
         ${u.role!=='partner'?`<button class="sm ghost" data-badge="${u.id}" data-name="${esc(u.full_name)}">Badge</button>`:''}
         ${isAdmin?`<button class="sm ghost" data-pw="${u.id}" data-name="${esc(u.full_name)}">Reset PW</button>`:''}
-      </td></tr>`).join('')}
+        ${isAdmin&&!self?`<button class="sm ghost" data-active="${u.id}" data-to="${u.is_active?0:1}">${u.is_active?'Disable':'Enable'}</button>`:''}
+        ${isAdmin&&!self?`<button class="sm ghost" data-del="${u.id}" data-name="${esc(u.full_name)}">Delete</button>`:''}
+      </td></tr>`; }).join('')}
     </tbody></table>
     ${isAdmin?`<h3>Onboard a user</h3>
     <div class="muted" style="font-size:12px;margin:-4px 0 8px">Give the person their User ID and a temporary password — they can sign in immediately and you can reset it any time.</div>
@@ -1015,6 +1017,15 @@ async function openUsers(){
   if($('#printBadges')) $('#printBadges').onclick=()=>printAllBadges(users.filter(u=>u.role!=='partner'));
   document.querySelectorAll('[data-badge]').forEach(b=>b.onclick=()=>printBadge(Number(b.dataset.badge), b.dataset.name));
   document.querySelectorAll('[data-pw]').forEach(b=>b.onclick=()=>openResetPw(b.dataset.pw, b.dataset.name));
+  document.querySelectorAll('[data-active]').forEach(b=>b.onclick=async()=>{
+    try{ await api('/api/users/'+b.dataset.active+'/active',{method:'POST',body:{active:b.dataset.to==='1'}}); close(); openUsers(); }
+    catch(e){ alert(e.message); }
+  });
+  document.querySelectorAll('[data-del]').forEach(b=>b.onclick=async()=>{
+    if(!confirm('Delete user '+b.dataset.name+'? (If they have activity, disable them instead.)')) return;
+    try{ await api('/api/users/'+b.dataset.del,{method:'DELETE'}); close(); openUsers(); }
+    catch(e){ alert(e.message); }
+  });
   if($('#addU')) $('#addU').onclick=async()=>{
     try{ await api('/api/users',{method:'POST',body:{ username:$('#u_username').value, full_name:$('#u_name').value,
       email:$('#u_email').value||null, password:$('#u_pw').value, role:$('#u_role').value, organization:$('#u_org').value }});
